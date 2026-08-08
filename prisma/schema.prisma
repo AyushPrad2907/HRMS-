@@ -1,0 +1,395 @@
+// Implex Edu HRMS — Prisma schema (SQLite adapter of the SRS/TDD)
+// Note: SQLite has no RLS, jsonb, enums, or inet. We use String (cuid) IDs,
+// DateTime fields, and JSON serialized as String for flexible payloads.
+// Authorization is enforced at the service/API layer (defense-in-depth).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & Access (Section 7.4 / 8)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  emailVerified DateTime? @map("email_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  profile       Profile?
+  employee      Employee?
+  userRoles     UserRole[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Profile {
+  id            String   @id @default(cuid())
+  userId        String   @unique @map("user_id")
+  displayName   String   @map("display_name")
+  phone         String?
+  bio           String?
+  avatarUrl     String?  @map("avatar_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // hr_admin | teacher | marketing | ...
+  label       String   // Human friendly
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique // resource:action e.g. employee:create
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(cuid())
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+// ---------------------------------------------------------------------------
+// Organization & Employees (Section 7.4)
+// ---------------------------------------------------------------------------
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  employees Employee[]
+
+  @@map("departments")
+}
+
+model Employee {
+  id                 String   @id @default(cuid())
+  userId             String   @unique @map("user_id")
+  employeeCode       String   @unique @map("employee_code")
+  departmentId       String   @map("department_id")
+  designation        String
+  joinDate           DateTime @map("join_date")
+  employmentStatus   String   @default("active") @map("employment_status") // active|on_leave|suspended|offboarded
+  reportingManagerId String?  @map("reporting_manager_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department        Department  @relation(fields: [departmentId], references: [id])
+  reportingManager  Employee?   @relation("ManagerReports", fields: [reportingManagerId], references: [id])
+  directReports     Employee[]  @relation("ManagerReports")
+
+  attendance        Attendance[]
+  leaveRequests     LeaveRequest[]     @relation("EmployeeLeaveRequests")
+  approvedLeaves    LeaveRequest[]     @relation("LeaveApprover")
+  teacherReports    TeacherReport[]
+  marketingReports  MarketingReport[]
+  ownedLeads        MarketingLead[]
+  ownedDeals        MarketingDeal[]
+  markedAttendance  Attendance[]       @relation("AttendanceMarker")
+  auditActions      AuditLog[]         @relation("AuditActor")
+  activityLogs      ActivityLog[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  id             String   @id @default(cuid())
+  employeeId     String   @map("employee_id")
+  attendanceDate DateTime @map("attendance_date")
+  checkInAt      DateTime? @map("check_in_at")
+  checkOutAt     DateTime? @map("check_out_at")
+  status         String   // present|absent|half_day|on_leave|holiday
+  markedById     String?  @map("marked_by_id")
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  markedBy Employee? @relation("AttendanceMarker", fields: [markedById], references: [id])
+
+  @@unique([employeeId, attendanceDate])
+  @@index([attendanceDate])
+  @@map("attendance")
+}
+
+model Holiday {
+  id          String   @id @default(cuid())
+  name        String
+  holidayDate DateTime @map("holiday_date")
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("holidays")
+}
+
+// ---------------------------------------------------------------------------
+// Teacher reports (Section 10)
+// ---------------------------------------------------------------------------
+
+model TeacherReport {
+  id          String   @id @default(cuid())
+  employeeId  String   @map("employee_id")
+  reportDate  DateTime @map("report_date")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  employee Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  classes  TeacherClass[]
+
+  @@unique([employeeId, reportDate])
+  @@map("teacher_reports")
+}
+
+model TeacherClass {
+  id               String   @id @default(cuid())
+  teacherReportId  String   @map("teacher_report_id")
+  batch            String
+  subject          String
+  topicsCovered    String   @map("topics_covered")
+  studentsAttended Int      @map("students_attended")
+  assignmentsChecked Boolean @default(false) @map("assignments_checked")
+  notesUrl         String?  @map("notes_url")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  teacherReport TeacherReport @relation(fields: [teacherReportId], references: [id], onDelete: Cascade)
+
+  @@map("teacher_classes")
+}
+
+// ---------------------------------------------------------------------------
+// Marketing reports + CRM (Section 11)
+// ---------------------------------------------------------------------------
+
+model MarketingReport {
+  id          String   @id @default(cuid())
+  employeeId  String   @map("employee_id")
+  reportDate  DateTime @map("report_date")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  employee  Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  meetings  MarketingMeeting[]
+  calls     MarketingCall[]
+
+  @@unique([employeeId, reportDate])
+  @@map("marketing_reports")
+}
+
+model MarketingMeeting {
+  id                String   @id @default(cuid())
+  marketingReportId String   @map("marketing_report_id")
+  counterparty      String   @map("counterparty")
+  purpose           String
+  outcome           String?
+  durationMinutes   Int      @map("duration_minutes")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  marketingReport MarketingReport @relation(fields: [marketingReportId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_meetings")
+}
+
+model MarketingCall {
+  id                String   @id @default(cuid())
+  marketingReportId String   @map("marketing_report_id")
+  contactName       String   @map("contact_name")
+  contactPhone      String?  @map("contact_phone")
+  outcome           String   // connected|voicemail|no_answer|callback_scheduled
+  notes             String?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  marketingReport MarketingReport @relation(fields: [marketingReportId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_calls")
+}
+
+model MarketingLead {
+  id              String   @id @default(cuid())
+  ownerEmployeeId String   @map("owner_employee_id")
+  name            String
+  contactPhone    String?  @map("contact_phone")
+  contactEmail    String?  @map("contact_email")
+  source          String   // referral|ads|website|event|outbound
+  status          String   @default("new") // new|contacted|qualified|lost|converted
+  estimatedValue  Float?   @map("estimated_value")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  owner      Employee              @relation(fields: [ownerEmployeeId], references: [id], onDelete: Cascade)
+  followups  MarketingFollowup[]
+  deals      MarketingDeal[]
+
+  @@index([status])
+  @@index([ownerEmployeeId])
+  @@map("marketing_leads")
+}
+
+model MarketingFollowup {
+  id        String   @id @default(cuid())
+  leadId    String   @map("lead_id")
+  dueDate   DateTime @map("due_date")
+  task      String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  lead MarketingLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_followups")
+}
+
+model MarketingDeal {
+  id              String   @id @default(cuid())
+  leadId          String   @map("lead_id")
+  ownerEmployeeId String   @map("owner_employee_id")
+  title           String
+  stage           String   @default("prospecting") // prospecting|proposal|negotiation|won|lost
+  revenueAmount   Float    @default(0) @map("revenue_amount")
+  currency        String   @default("INR")
+  closedAt        DateTime? @map("closed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  lead  MarketingLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  owner Employee      @relation(fields: [ownerEmployeeId], references: [id], onDelete: Cascade)
+
+  @@index([stage])
+  @@map("marketing_deals")
+}
+
+// ---------------------------------------------------------------------------
+// Leave (Section 9)
+// ---------------------------------------------------------------------------
+
+model LeaveRequest {
+  id             String   @id @default(cuid())
+  employeeId     String   @map("employee_id")
+  leaveType      String   @map("leave_type") // casual|sick|earned|unpaid
+  startDate      DateTime @map("start_date")
+  endDate        DateTime @map("end_date")
+  reason         String
+  status         String   @default("pending") // pending|approved|rejected|cancelled
+  approvedById   String?  @map("approved_by_id")
+  decidedAt      DateTime? @map("decided_at")
+  attachmentPath String?  @map("attachment_path")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  employee  Employee  @relation("EmployeeLeaveRequests", fields: [employeeId], references: [id], onDelete: Cascade)
+  approver  Employee? @relation("LeaveApprover", fields: [approvedById], references: [id])
+
+  @@index([status])
+  @@map("leave_requests")
+}
+
+// ---------------------------------------------------------------------------
+// System (Section 15)
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String   // leave.approved|leave.requested|report.reminder|employee.created|announcement|system.alert
+  title     String
+  body      String?
+  payload   String?  // JSON string
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?  @map("actor_id")
+  action      String   // e.g. employee.create, leave.approve
+  targetTable String   @map("target_table")
+  targetId    String   @map("target_id")
+  beforeState String?  @map("before_state") // JSON string
+  afterState  String?  @map("after_state")  // JSON string
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  actor Employee? @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  employeeId String  @map("employee_id")
+  activity  String
+  meta      String?  // JSON string
+  createdAt DateTime @default(now()) @map("created_at")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+model Settings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String // JSON string
+}

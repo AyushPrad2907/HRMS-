@@ -1,0 +1,869 @@
+     1→# Implex Edu HRMS — Software Requirements Specification & Technical Design Document
+     2→
+     3→**Document Type:** SRS + TDD
+     4→**Product:** Implex Edu HRMS (Human Resource Management System)
+     5→**Prepared for:** Implex Edu Engineering Team
+     6→**Stack:** Next.js 16 (App Router) · TypeScript · Supabase (Postgres, Auth, Storage, Realtime) · Prisma ORM · Vercel
+     7→**Version:** 1.0
+     8→**Status:** Draft for engineering handoff
+     9→
+    10→---
+    11→
+    12→## Table of Contents
+    13→
+    14→1. [Introduction & Business Context](#1-introduction--business-context)
+    15→2. [Scope & Goals](#2-scope--goals)
+    16→3. [Architectural Principles](#3-architectural-principles)
+    17→4. [Technology Stack & Rationale](#4-technology-stack--rationale)
+    18→5. [System Architecture](#5-system-architecture)
+    19→6. [Roles & Permission Model](#6-roles--permission-model)
+    20→7. [Database Design](#7-database-design)
+    21→8. [Authentication & Authorization](#8-authentication--authorization)
+    22→9. [HR Dashboard — Functional Spec](#9-hr-dashboard--functional-spec)
+    23→10. [Teacher Dashboard — Functional Spec](#10-teacher-dashboard--functional-spec)
+    24→11. [Marketing Dashboard — Functional Spec](#11-marketing-dashboard--functional-spec)
+    25→12. [UI/UX Design System](#12-uiux-design-system)
+    26→13. [Security Architecture](#13-security-architecture)
+    27→14. [File Storage Design](#14-file-storage-design)
+    28→15. [Realtime Notifications](#15-realtime-notifications)
+    29→16. [Analytics & Reporting](#16-analytics--reporting)
+    30→17. [Deployment Architecture & CI/CD](#17-deployment-architecture--cicd)
+    31→18. [Folder Structure](#18-folder-structure)
+    32→19. [Testing Strategy](#19-testing-strategy)
+    33→20. [Development Roadmap](#20-development-roadmap)
+    34→21. [Appendix](#21-appendix)
+    35→
+    36→---
+    37→
+    38→## 1. Introduction & Business Context
+    39→
+    40→Implex Edu currently manages employee work reporting, attendance, and leave through WhatsApp groups and shared Excel sheets. This is error-prone, unauditable, has no single source of truth, and does not scale past a handful of employees. As the company grows beyond its initial three functions — HR administration, teaching delivery, and marketing/sales — this manual process becomes a structural liability.
+    41→
+    42→This document specifies an enterprise-grade HRMS that centralizes:
+    43→
+    44→- Employee lifecycle management (onboarding, roles, offboarding)
+    45→- Attendance tracking
+    46→- Daily work reporting (role-specific)
+    47→- Leave requests and approvals
+    48→- Productivity and performance analytics
+    49→- Realtime notifications
+    50→- Full audit history of sensitive actions
+    51→
+    52→The system is designed so that **adding a new department (Sales, Accounts, Support, Content, Operations, Management) requires no architectural change** — only new role definitions, permission sets, and (optionally) a new report-type schema extension.
+    53→
+    54→## 2. Scope & Goals
+    55→
+    56→### 2.1 In Scope
+    57→
+    58→| Area | Description |
+    59→|---|---|
+    60→| Employee Management | CRUD on employees, role assignment, department assignment, profile management |
+    61→| Attendance | Daily check-in/out, attendance history, HR override, holiday calendar |
+    62→| Daily Work Reporting | Role-specific report forms (Teacher, Marketing), with HR-wide visibility |
+    63→| Leave Management | Request, approve/reject, leave balance, leave types |
+    64→| Analytics | Productivity, attendance, performance, revenue/deal analytics |
+    65→| Notifications | Realtime in-app notifications for approvals, reminders, alerts |
+    66→| Audit & Activity Logs | Immutable log of sensitive HR actions and general activity trail |
+    67→
+    68→### 2.2 Out of Scope (v1)
+    69→
+    70→- Payroll and salary processing
+    71→- Biometric hardware integration
+    72→- Native mobile apps (the web app will be responsive/PWA-capable, not native)
+    73→- Third-party HR integrations (e.g., LinkedIn, job boards)
+    74→
+    75→### 2.3 Non-Functional Requirements
+    76→
+    77→| Requirement | Target |
+    78→|---|---|
+    79→| Scale | 500+ employees, unlimited departments, without architecture change |
+    80→| Availability | 99.9% (bounded by Vercel + Supabase SLAs) |
+    81→| Performance | P95 dashboard load < 1.5s; server actions < 400ms for CRUD |
+    82→| Security | OWASP Top 10 mitigations, RLS-enforced multi-tenant-safe data access |
+    83→| Accessibility | WCAG 2.1 AA on core flows |
+    84→| Auditability | Every create/update/delete on sensitive tables logged immutably |
+    85→
+    86→## 3. Architectural Principles
+    87→
+    88→The system follows **Clean Architecture** adapted to Next.js's App Router, and **SOLID** principles at the module level:
+    89→
+    90→- **Single Responsibility** — each Server Action does one write; each Route Handler exposes one resource concern; UI components are presentation-only and receive data via props or Server Components.
+    91→- **Open/Closed** — role-specific behavior (e.g., report forms) is implemented via a **strategy pattern**: a `ReportTypeDefinition` registry, not `if (role === 'teacher')` branching scattered across the codebase. Adding "Sales" reports means registering a new definition, not editing existing modules.
+    92→- **Liskov Substitution** — all report types implement a common `ReportSubmission` interface so dashboards, exports, and analytics can treat any report generically.
+    93→- **Interface Segregation** — permission checks are granular (`employee:create`, `leave:approve`) rather than coarse role checks, so UI and server logic depend only on the permissions they need.
+    94→- **Dependency Inversion** — business logic (services layer) depends on repository interfaces, not directly on Prisma client calls, so the data layer can be tested/mocked and swapped if needed.
+    95→
+    96→**Role-independence rule:** No table, Server Action, or UI component may hard-code a role name in its core logic. Role names live only in seed data and permission-mapping tables. All access decisions route through the `permissions` / `role_permissions` tables.
+    97→
+    98→## 4. Technology Stack & Rationale
+    99→
+   100→| Layer | Technology | Why |
+   101→|---|---|---|
+   102→| Framework | Next.js 16 (App Router) | Single deployable unit for UI + API via Route Handlers/Server Actions; React Server Components cut client JS; native Vercel integration |
+   103→| Language | TypeScript | End-to-end type safety from DB (Prisma) → service layer → UI |
+   104→| Styling | Tailwind CSS + Shadcn UI | Utility-first velocity + accessible, unstyled primitives that can be themed to a premium SaaS look |
+   105→| Icons | Lucide Icons | Consistent, tree-shakeable icon set matching Shadcn's design language |
+   106→| Charts | Recharts | Composable, SVG-based, good default for HR/analytics dashboards |
+   107→| Motion | Framer Motion | Micro-interactions (dashboard transitions, modals, skeleton fades) |
+   108→| Forms | React Hook Form + Zod | Performant uncontrolled forms + schema validation reused on client **and** server (same Zod schema imported into Server Actions) |
+   109→| Database | Supabase PostgreSQL | Managed Postgres with built-in RLS, Auth, Storage, Realtime under one vendor |
+   110→| ORM | Prisma | Type-safe query layer, migrations, and schema-as-code; used for all non-RLS-sensitive access |
+   111→| Auth | Supabase Auth | Email/password, email verification, password reset, JWT session cookies, integrates directly with Postgres RLS via `auth.uid()` |
+   112→| Storage | Supabase Storage | Bucket-based file storage with policy-based access control, same project as DB/Auth |
+   113→| Realtime | Supabase Realtime | Postgres logical replication → websocket push, used for notifications |
+   114→| Deployment | Vercel + Supabase | Zero-ops hosting; Vercel Preview Deployments per PR; Supabase branching for DB previews |
+   115→| Testing | Jest, React Testing Library, Playwright | Unit/component tests + full E2E coverage of critical flows |
+   116→
+   117→### 4.1 Explicitly Excluded
+   118→
+   119→Express.js, a standalone Node REST server, MongoDB/Mongoose, Vite, Render, Railway, Socket.io, Cloudinary, and NGINX are excluded by mandate — Next.js Route Handlers replace a REST server, Supabase Realtime replaces Socket.io, Supabase Storage replaces Cloudinary, and Vercel's edge network replaces NGINX. Redis is **not used in v1**; if a future need for shared caching or rate-limiting state arises beyond what Postgres/Vercel Edge Config can handle, it can be introduced without restructuring the app, but is not part of this design.
+   120→
+   121→## 5. System Architecture
+   122→
+   123→### 5.1 High-Level Architecture
+   124→
+   125→```mermaid
+   126→flowchart TB
+   127→    subgraph Client["Client (Browser)"]
+   128→        UI["Next.js UI — RSC + Client Components"]
+   129→    end
+   130→
+   131→    subgraph Vercel["Vercel Edge / Node Runtime"]
+   132→        MW["Middleware — session + route protection"]
+   133→        RH["Route Handlers — /app/api/**"]
+   134→        SA["Server Actions — mutations"]
+   135→        RSC["Server Components — data fetching"]
+   136→    end
+   137→
+   138→    subgraph Supabase["Supabase Project"]
+   139→        AUTH["Supabase Auth"]
+   140→        PG["PostgreSQL + Row Level Security"]
+   141→        STORAGE["Supabase Storage"]
+   142→        RT["Supabase Realtime"]
+   143→    end
+   144→
+   145→    UI -->|HTTPS| MW
+   146→    MW --> RSC
+   147→    MW --> RH
+   148→    UI -->|invoke| SA
+   149→    RSC -->|Prisma / Supabase client| PG
+   150→    SA -->|Prisma| PG
+   151→    RH -->|Prisma| PG
+   152→    UI <-->|WebSocket| RT
+   153→    RT --> PG
+   154→    MW -->|verify JWT| AUTH
+   155→    SA -->|signed URL| STORAGE
+   156→    UI -->|upload| STORAGE
+   157→```
+   158→
+   159→### 5.2 Request Lifecycle (Write Path Example: Leave Approval)
+   160→
+   161→```mermaid
+   162→sequenceDiagram
+   163→    participant U as HR User (Browser)
+   164→    participant MW as Middleware
+   165→    participant SA as Server Action approveLeave()
+   166→    participant Z as Zod Schema
+   167→    participant SVC as LeaveService
+   168→    participant P as Prisma
+   169→    participant DB as Postgres (RLS)
+   170→    participant RT as Supabase Realtime
+   171→    participant T as Teacher (Browser)
+   172→
+   173→    U->>MW: POST intent via form action
+   174→    MW->>MW: Verify session cookie, attach user + role
+   175→    MW->>SA: Forward request
+   176→    SA->>Z: Validate payload (leaveRequestId, decision)
+   177→    Z-->>SA: Parsed & typed input
+   178→    SA->>SVC: approveLeaveRequest(input, actingUser)
+   179→    SVC->>SVC: Check permission "leave:approve"
+   180→    SVC->>P: update leave_requests SET status=...
+   181→    P->>DB: SQL (RLS policy evaluated against auth.uid())
+   182→    DB-->>P: Row updated
+   183→    SVC->>P: insert audit_logs
+   184→    SVC->>P: insert notifications (for Teacher)
+   185→    P-->>DB: Insert
+   186→    DB-->>RT: Logical replication event
+   187→    RT-->>T: Push notification via WebSocket
+   188→    SA-->>U: revalidatePath + success toast
+   189→```
+   190→
+   191→### 5.3 Layering Within the Next.js App
+   192→
+   193→```
+   194→UI (Server/Client Components)
+   195→   ↓ calls
+   196→Server Actions / Route Handlers   (thin — validation + orchestration only)
+   197→   ↓ calls
+   198→Service Layer (/lib/services/*)   (business rules, permission checks)
+   199→   ↓ calls
+   200→Repository Layer (/lib/repositories/*) (Prisma queries, isolated per aggregate)
+   201→   ↓ queries
+   202→Prisma Client → PostgreSQL (RLS as defense-in-depth)
+   203→```
+   204→
+   205→Server Actions and Route Handlers never call Prisma directly for anything beyond trivial reads — all writes and permission-sensitive reads go through the service layer so business rules live in one place and are unit-testable without spinning up Next.js.
+   206→
+   207→## 6. Roles & Permission Model
+   208→
+   209→### 6.1 Design
+   210→
+   211→Permissions are **granular and additive**, stored in `permissions`, grouped into roles via `role_permissions`. The application never checks `role === 'hr'`; it checks `hasPermission(user, 'employee:create')`. This is what makes new departments pluggable — a new role is just a new row in `roles` plus a set of rows in `role_permissions`.
+   212→
+   213→### 6.2 Initial Role → Permission Matrix
+   214→
+   215→| Permission | HR Admin | Teacher | Marketing |
+   216→|---|:---:|:---:|:---:|
+   217→| `employee:create` | ✅ | ❌ | ❌ |
+   218→| `employee:edit` | ✅ | ❌ (own profile only) | ❌ (own profile only) |
+   219→| `employee:delete` | ✅ | ❌ | ❌ |
+   220→| `employee:view_all` | ✅ | ❌ | ❌ |
+   221→| `attendance:mark_own` | ✅ | ✅ | ✅ |
+   222→| `attendance:view_all` | ✅ | ❌ | ❌ |
+   223→| `attendance:override` | ✅ | ❌ | ❌ |
+   224→| `report:submit_teacher` | ❌ | ✅ | ❌ |
+   225→| `report:submit_marketing` | ❌ | ❌ | ✅ |
+   226→| `report:view_own` | ✅ | ✅ | ✅ |
+   227→| `report:view_all` | ✅ | ❌ | ❌ |
+   228→| `leave:request` | ✅ | ✅ | ✅ |
+   229→| `leave:approve` | ✅ | ❌ | ❌ |
+   230→| `analytics:view_org` | ✅ | ❌ | ❌ |
+   231→| `analytics:view_own` | ✅ | ✅ | ✅ |
+   232→| `notification:broadcast` | ✅ | ❌ | ❌ |
+   233→| `settings:manage` | ✅ | ❌ | ❌ |
+   234→| `audit:view` | ✅ | ❌ | ❌ |
+   235→
+   236→Adding "Sales" later means: insert `role = 'sales'`, insert `report:submit_sales` permission, map it, and register a `SalesReportDefinition` in the report-type registry (Section 3). No existing table or Server Action changes.
+   237→
+   238→### 6.3 Permission Evaluation Order
+   239→
+   240→1. **Middleware** — is there a valid session? If not, redirect to `/login`.
+   241→2. **Route-level guard** (layout-level, e.g., `/app/(hr)/layout.tsx`) — does the user hold *any* permission in this route group's required set? If not, 403 page.
+   242→3. **Service-layer check** — does the user hold the *specific* permission for this action? If not, throw `ForbiddenError`.
+   243→4. **Database RLS** — even if application logic is somehow bypassed, Postgres RLS policies (Section 8.4) independently enforce row-level access as the last line of defense.
+   244→
+   245→## 7. Database Design
+   246→
+   247→### 7.1 Conventions
+   248→
+   249→- Every table: `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`, `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` (maintained via trigger), `deleted_at TIMESTAMPTZ NULL` for soft delete.
+   250→- Soft delete: application queries always filter `deleted_at IS NULL` via Prisma middleware; hard delete is restricted to a scheduled retention job (Section 13.7).
+   251→- Foreign keys use `ON DELETE RESTRICT` by default, `ON DELETE CASCADE` only for strictly dependent child rows (e.g., `teacher_classes` rows under a `teacher_reports` row).
+   252→- Naming: snake_case columns/tables (Postgres convention), camelCase in Prisma models (Prisma handles the mapping via `@map`/`@@map`).
+   253→
+   254→### 7.2 Core Entity List
+   255→
+   256→| Table | Purpose |
+   257→|---|---|
+   258→| `users` | Mirrors Supabase `auth.users` id; app-level identity anchor |
+   259→| `profiles` | Display name, avatar, phone, bio — 1:1 with `users` |
+   260→| `employees` | Employment record: employee code, department, designation, join date, status |
+   261→| `roles` | Role catalog (hr_admin, teacher, marketing, …) |
+   262→| `permissions` | Permission catalog (`resource:action` strings) |
+   263→| `role_permissions` | Many-to-many role ↔ permission |
+   264→| `user_roles` | Many-to-many user ↔ role (supports future multi-role users) |
+   265→| `departments` | Department catalog, self-extensible |
+   266→| `attendance` | Daily attendance record per employee |
+   267→| `holidays` | Organization holiday calendar |
+   268→| `teacher_reports` | Daily report header submitted by a teacher |
+   269→| `teacher_classes` | Line items: one row per class within a teacher's daily report |
+   270→| `marketing_reports` | Daily report header submitted by marketing |
+   271→| `marketing_meetings` | Line items: meetings logged within a marketing report |
+   272→| `marketing_calls` | Line items: calls logged |
+   273→| `marketing_leads` | Lead records (longer-lived than a single day's report) |
+   274→| `marketing_followups` | Follow-up tasks tied to a lead |
+   275→| `marketing_deals` | Deal/opportunity records with stage + revenue |
+   276→| `leave_requests` | Leave applications and their approval state |
+   277→| `notifications` | Per-user notification feed |
+   278→| `audit_logs` | Immutable record of sensitive mutations |
+   279→| `activity_logs` | General activity trail (logins, views) for engagement analytics |
+   280→| `settings` | Org-wide key/value configuration |
+   281→
+   282→### 7.3 Entity Relationship Diagram
+   283→
+   284→```mermaid
+   285→erDiagram
+   286→    USERS ||--|| PROFILES : has
+   287→    USERS ||--|| EMPLOYEES : "is"
+   288→    USERS ||--o{ USER_ROLES : has
+   289→    ROLES ||--o{ USER_ROLES : "assigned via"
+   290→    ROLES ||--o{ ROLE_PERMISSIONS : has
+   291→    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "granted via"
+   292→    DEPARTMENTS ||--o{ EMPLOYEES : contains
+   293→    EMPLOYEES ||--o{ ATTENDANCE : logs
+   294→    EMPLOYEES ||--o{ LEAVE_REQUESTS : submits
+   295→    EMPLOYEES ||--o{ TEACHER_REPORTS : submits
+   296→    TEACHER_REPORTS ||--o{ TEACHER_CLASSES : contains
+   297→    EMPLOYEES ||--o{ MARKETING_REPORTS : submits
+   298→    MARKETING_REPORTS ||--o{ MARKETING_MEETINGS : contains
+   299→    MARKETING_REPORTS ||--o{ MARKETING_CALLS : contains
+   300→    EMPLOYEES ||--o{ MARKETING_LEADS : owns
+   301→    MARKETING_LEADS ||--o{ MARKETING_FOLLOWUPS : has
+   302→    MARKETING_LEADS ||--o{ MARKETING_DEALS : converts_to
+   303→    EMPLOYEES ||--o{ NOTIFICATIONS : receives
+   304→    EMPLOYEES ||--o{ AUDIT_LOGS : "acted by"
+   305→    EMPLOYEES ||--o{ ACTIVITY_LOGS : generates
+   306→    LEAVE_REQUESTS }o--|| EMPLOYEES : "approved by"
+   307→```
+   308→
+   309→### 7.4 Key Table Definitions
+   310→
+   311→**`employees`**
+   312→
+   313→| Column | Type | Constraints |
+   314→|---|---|---|
+   315→| id | uuid | PK, `= users.id` (shared PK pattern) |
+   316→| employee_code | text | UNIQUE NOT NULL |
+   317→| department_id | uuid | FK → departments.id, RESTRICT |
+   318→| designation | text | NOT NULL |
+   319→| join_date | date | NOT NULL |
+   320→| employment_status | text | CHECK IN ('active','on_leave','suspended','offboarded') |
+   321→| reporting_manager_id | uuid | FK → employees.id, SET NULL |
+   322→| created_at / updated_at / deleted_at | timestamptz | see 7.1 |
+   323→
+   324→Indexes: `UNIQUE(employee_code)`, `INDEX(department_id)`, `INDEX(reporting_manager_id)`.
+   325→
+   326→**`attendance`**
+   327→
+   328→| Column | Type | Constraints |
+   329→|---|---|---|
+   330→| id | uuid | PK |
+   331→| employee_id | uuid | FK → employees.id, CASCADE |
+   332→| attendance_date | date | NOT NULL |
+   333→| check_in_at | timestamptz | NULL |
+   334→| check_out_at | timestamptz | NULL |
+   335→| status | text | CHECK IN ('present','absent','half_day','on_leave','holiday') |
+   336→| marked_by | uuid | FK → employees.id (self or HR override), SET NULL |
+   337→| created_at / updated_at | timestamptz | |
+   338→
+   339→Constraint: `UNIQUE(employee_id, attendance_date)` — composite key preventing duplicate daily rows. Index: `INDEX(attendance_date)` for org-wide daily queries.
+   340→
+   341→**`teacher_reports`** / **`teacher_classes`**
+   342→
+   343→`teacher_reports`: `id, employee_id FK, report_date, submitted_at, notes, created_at, updated_at, deleted_at` with `UNIQUE(employee_id, report_date)`.
+   344→
+   345→`teacher_classes`: `id, teacher_report_id FK CASCADE, batch, subject, topics_covered text, students_attended int, assignments_checked boolean, notes_uploaded_url text NULL, created_at`.
+   346→
+   347→**`marketing_leads` / `marketing_deals`**
+   348→
+   349→`marketing_leads`: `id, owner_employee_id FK, name, contact_phone, contact_email, source, status CHECK IN ('new','contacted','qualified','lost','converted'), created_at, updated_at, deleted_at`.
+   350→
+   351→`marketing_deals`: `id, lead_id FK, owner_employee_id FK, stage CHECK IN ('prospecting','proposal','negotiation','won','lost'), revenue_amount numeric(12,2), currency text DEFAULT 'INR', closed_at timestamptz NULL, created_at, updated_at`.
+   352→
+   353→Index: `INDEX(stage)`, `INDEX(owner_employee_id)` on both — these drive the marketing pipeline/KPI views (Section 16).
+   354→
+   355→**`leave_requests`**
+   356→
+   357→| Column | Type | Constraints |
+   358→|---|---|---|
+   359→| id | uuid | PK |
+   360→| employee_id | uuid | FK → employees.id |
+   361→| leave_type | text | CHECK IN ('casual','sick','earned','unpaid') |
+   362→| start_date / end_date | date | NOT NULL, CHECK(end_date >= start_date) |
+   363→| reason | text | |
+   364→| status | text | CHECK IN ('pending','approved','rejected','cancelled') DEFAULT 'pending' |
+   365→| approved_by | uuid | FK → employees.id, SET NULL |
+   366→| decided_at | timestamptz | NULL |
+   367→| attachment_path | text | NULL — Supabase Storage object path |
+   368→
+   369→**`audit_logs`** (append-only, no `updated_at`/soft delete — immutable by design)
+   370→
+   371→| Column | Type |
+   372→|---|---|
+   373→| id | uuid PK |
+   374→| actor_id | uuid FK → employees.id |
+   375→| action | text (e.g. `employee.create`, `leave.approve`) |
+   376→| target_table | text |
+   377→| target_id | uuid |
+   378→| before_state | jsonb NULL |
+   379→| after_state | jsonb NULL |
+   380→| ip_address | inet NULL |
+   381→| created_at | timestamptz DEFAULT now() |
+   382→
+   383→Application-level rule enforced in the service layer (and reinforced by a `REVOKE UPDATE, DELETE` grant at the DB role level) — no code path may update or delete an audit log row.
+   384→
+   385→### 7.5 Prisma Model Architecture
+   386→
+   387→Prisma models mirror the tables above 1:1, organized into separate schema files stitched via `prisma.config` (`prisma/schema/*.prisma` with `previewFeatures = ["prismaSchemaFolder"]`) so the schema scales cleanly as departments are added:
+   388→
+   389→```
+   390→prisma/schema/
+   391→  identity.prisma      // User, Profile, Role, Permission, RolePermission, UserRole
+   392→  employee.prisma       // Employee, Department, Attendance, Holiday
+   393→  reports.prisma         // TeacherReport, TeacherClass, MarketingReport, MarketingMeeting, MarketingCall
+   394→  crm.prisma              // MarketingLead, MarketingFollowup, MarketingDeal
+   395→  leave.prisma            // LeaveRequest
+   396→  system.prisma           // Notification, AuditLog, ActivityLog, Settings
+   397→```
+   398→
+   399→Example excerpt (`employee.prisma`):
+   400→
+   401→```prisma
+   402→model Employee {
+   403→  id                   String   @id @default(uuid())
+   404→  employeeCode         String   @unique @map("employee_code")
+   405→  departmentId         String   @map("department_id")
+   406→  designation          String
+   407→  joinDate             DateTime @map("join_date") @db.Date
+   408→  employmentStatus     String   @default("active") @map("employment_status")
+   409→  reportingManagerId   String?  @map("reporting_manager_id")
+   410→
+   411→  department           Department @relation(fields: [departmentId], references: [id])
+   412→  reportingManager     Employee?  @relation("ManagerReports", fields: [reportingManagerId], references: [id])
+   413→  directReports        Employee[] @relation("ManagerReports")
+   414→
+   415→  attendance           Attendance[]
+   416→  leaveRequests        LeaveRequest[]
+   417→  teacherReports       TeacherReport[]
+   418→  marketingReports     MarketingReport[]
+   419→
+   420→  createdAt            DateTime  @default(now()) @map("created_at")
+   421→  updatedAt            DateTime  @updatedAt @map("updated_at")
+   422→  deletedAt            DateTime? @map("deleted_at")
+   423→
+   424→  @@map("employees")
+   425→}
+   426→```
+   427→
+   428→Prisma Client is wrapped in a **soft-delete middleware** (`$extends`) so every model with a `deletedAt` field automatically excludes soft-deleted rows unless a query explicitly opts in with `includeDeleted: true`.
+   429→
+   430→## 8. Authentication & Authorization
+   431→
+   432→### 8.1 Authentication Flow
+   433→
+   434→- Supabase Auth handles email/password sign-in, email verification, and password reset out of the box.
+   435→- On successful sign-in, Supabase issues a JWT (access token) + refresh token, stored in **httpOnly, secure cookies** via `@supabase/ssr`'s cookie adapter — never in `localStorage`.
+   436→- Next.js **Middleware** runs on every request to refresh the session cookie and attach the resolved user to the request context.
+   437→
+   438→```mermaid
+   439→flowchart LR
+   440→    A[User submits credentials] --> B[Supabase Auth verifies]
+   441→    B -->|success| C[JWT + refresh token issued]
+   442→    C --> D[Set httpOnly cookies via @supabase/ssr]
+   443→    D --> E[Middleware validates on each request]
+   444→    E --> F{Session valid?}
+   445→    F -->|yes| G[Attach user + roles to request]
+   446→    F -->|no| H[Redirect to /login]
+   447→```
+   448→
+   449→### 8.2 Email Verification & Password Reset
+   450→
+   451→- New employees are created by HR via a Server Action that calls `supabase.auth.admin.inviteUserByEmail()`, sending a Supabase-hosted invite email; the employee sets their password on first login.
+   452→- Password reset uses `supabase.auth.resetPasswordForEmail()`, landing on a dedicated `/reset-password` route that verifies the recovery token before allowing a new password (Zod-validated for strength).
+   453→
+   454→### 8.3 Route Protection
+   455→
+   456→- `middleware.ts` matches all routes except static assets and `/login`, `/reset-password`.
+   457→- Route groups encode required permission sets: `/app/(hr)/**`, `/app/(teacher)/**`, `/app/(marketing)/**`, with a shared `/app/(shared)/**` for profile/notifications.
+   458→- Each route group's `layout.tsx` performs the Section 6.3 step-2 guard server-side (before any UI renders), preventing any flash-of-protected-content.
+   459→
+   460→### 8.4 Row Level Security (RLS) Strategy
+   461→
+   462→RLS is **defense-in-depth**, not the primary authorization mechanism (that's the service layer) — but it is mandatory on every table so a bug in application code cannot leak data.
+   463→
+   464→General pattern:
+   465→
+   466→```sql
+   467→alter table public.leave_requests enable row level security;
+   468→
+   469→-- Employees can see their own leave requests
+   470→create policy "employees_select_own_leave"
+   471→on public.leave_requests for select
+   472→using (employee_id = auth.uid());
+   473→
+   474→-- HR (or anyone holding leave:approve) can see and update all
+   475→create policy "hr_manage_all_leave"
+   476→on public.leave_requests for all
+   477→using (
+   478→  exists (
+   479→    select 1 from user_roles ur
+   480→    join role_permissions rp on rp.role_id = ur.role_id
+   481→    join permissions p on p.id = rp.permission_id
+   482→    where ur.user_id = auth.uid()
+   483→      and p.name = 'leave:approve'
+   484→  )
+   485→);
+   486→```
+   487→
+   488→This same `has_permission(auth.uid(), 'permission:name')` check is wrapped as a Postgres **SQL function** (`security definer`) and reused across every policy to avoid duplicating the join logic per table:
+   489→
+   490→```sql
+   491→create or replace function has_permission(uid uuid, perm text)
+   492→returns boolean
+   493→language sql security definer stable as $$
+   494→  select exists (
+   495→    select 1 from user_roles ur
+   496→    join role_permissions rp on rp.role_id = ur.role_id
+   497→    join permissions p on p.id = rp.permission_id
+   498→    where ur.user_id = uid and p.name = perm
+   499→  );
+   500→$$;
+   501→```
+   502→
+   503→Policies then read as `using (has_permission(auth.uid(), 'employee:view_all') or employee_id = auth.uid())`.
+   504→
+   505→### 8.5 How Auth, Authorization, and DB Permissions Compose
+   506→
+   507→| Layer | Question it answers | Mechanism |
+   508→|---|---|---|
+   509→| Authentication | "Who are you?" | Supabase Auth JWT, verified in Middleware |
+   510→| Route Guard | "Can you even be here?" | Layout-level permission-set check |
+   511→| Authorization (service) | "Can you do *this specific action*?" | `hasPermission(user, 'resource:action')` in service layer |
+   512→| RLS (DB) | "Even if everything above is bypassed, can this SQL statement touch this row?" | Postgres policies using `has_permission()` |
+   513→
+   514→All four layers must agree; RLS is intentionally the strictest and final gate.
+   515→
+   516→## 9. HR Dashboard — Functional Spec
+   517→
+   518→### 9.1 Layout
+   519→
+   520→Responsive sidebar (collapsible, icon-only on tablet) + top bar with global search / command palette (`⌘K`) + main content area with tab-based sub-navigation.
+   521→
+   522→### 9.2 Modules
+   523→
+   524→| Module | Contents |
+   525→|---|---|
+   526→| Overview | KPI cards (headcount, attendance rate today, pending leave, open reports), recent activity feed, quick actions |
+   527→| Employees | Data grid (sortable, filterable, paginated), add/edit/deactivate drawer, bulk role assignment |
+   528→| Attendance | Org-wide calendar/grid view, daily status, manual override with mandatory audit note |
+   529→| Leave | Pending queue with approve/reject actions, leave balance per employee, leave calendar |
+   530→| Reports | Cross-department report feed (Teacher + Marketing), filters by department/date/employee |
+   531→| Analytics | Productivity trends, attendance trends, department comparisons (see Section 16) |
+   532→| Notifications | Broadcast composer (targeted by role/department), delivery status |
+   533→| Audit Log | Searchable, filterable, read-only log viewer (Section 7.4) |
+   534→| Settings | Departments, roles/permissions editor, holiday calendar, org settings |
+   535→
+   536→### 9.3 Key Interaction: Employee Creation
+   537→
+   538→1. HR opens "Add Employee" drawer → React Hook Form + Zod schema (`employeeCreateSchema`).
+   539→2. On submit, Server Action `createEmployee()`:
+   540→   - Validates payload server-side (never trusts client validation alone).
+   541→   - Calls `supabase.auth.admin.inviteUserByEmail()`.
+   542→   - Creates `users`, `profiles`, `employees`, `user_roles` rows in a single Prisma `$transaction`.
+   543→   - Writes an `audit_logs` entry (`action = 'employee.create'`).
+   544→   - Writes a `notifications` row for the new employee's manager (if set).
+   545→3. `revalidatePath('/hr/employees')`; UI shows optimistic row + toast; skeleton while confirming.
+   546→
+   547→## 10. Teacher Dashboard — Functional Spec
+   548→
+   549→| Module | Contents |
+   550→|---|---|
+   551→| Overview | Today's classes, weekly class count, monthly stats, streak/consistency indicator |
+   552→| Daily Report | Multi-class form: add N class rows (batch, subject, topics covered, students attended, assignments checked, notes upload) in one submission |
+   553→| Attendance | Self check-in/out, personal history |
+   554→| Leave | Request form, status tracker, balance |
+   555→| History | Past report archive, searchable by date/batch/subject |
+   556→| Calendar | Personal schedule + holidays |
+   557→| Profile | Personal info, password change, avatar upload |
+   558→
+   559→The daily report form uses a `useFieldArray` (React Hook Form) so a teacher can add multiple `teacher_classes` rows under one `teacher_reports` header in a single submit, validated as an array via Zod (`z.array(classSchema).min(1)`).
+   560→
+   561→## 11. Marketing Dashboard — Functional Spec
+   562→
+   563→| Module | Contents |
+   564→|---|---|
+   565→| Overview | KPIs (calls made, meetings held, deals in pipeline, revenue this month vs target), conversion funnel chart |
+   566→| Daily Report | Log calls + meetings for the day (similar multi-row pattern to Teacher) |
+   567→| Leads | Lead table with status pipeline (kanban or list view toggle) |
+   568→| Deals | Deal pipeline board (stage columns), revenue rollup |
+   569→| Follow-ups | Task list tied to leads, due-date sorted |
+   570→| Attendance / Leave / Notifications / Profile | Shared with other roles (Section 6, common permission set) |
+   571→
+   572→## 12. UI/UX Design System
+   573→
+   574→### 12.1 Visual Direction
+   575→
+   576→Inspired by Linear, Notion, Stripe Dashboard, Vercel Dashboard, and GitHub: dense-but-breathable information design, restrained color (neutral grays + one accent), subtle elevation via shadow rather than heavy borders, generous use of monospace for codes/IDs, and motion that clarifies state changes rather than decorating them.
+   577→
+   578→### 12.2 Core Components (Shadcn-based)
+   579→
+   580→| Component | Usage |
+   581→|---|---|
+   582→| Command Palette | `⌘K` global navigation + quick actions (Shadcn `Command`) |
+   583→| Data Table | Employee/report/lead grids — sortable, filterable, column-configurable (TanStack Table + Shadcn table primitives) |
+   584→| Sheet/Drawer | Add/edit forms slide in from the right instead of full navigation |
+   585→| Dialog | Confirmations (delete, leave decision) |
+   586→| Skeleton | Every async region has a matching skeleton (never a bare spinner for structured content) |
+   587→| Toast (Sonner) | Success/error feedback for every Server Action |
+   588→| Charts | Recharts wrapped in a themed `ChartCard` (bar, line, area, pie/radial for pipeline) |
+   589→| Empty State | Illustration + primary CTA for every list that can be empty |
+   590→| Error Boundary | Route-level `error.tsx` with retry action |
+   591→
+   592→### 12.3 Theming
+   593→
+   594→CSS variables for light/dark mode via Tailwind's `dark:` variant + `next-themes`; Shadcn's token system (`--background`, `--foreground`, `--primary`, etc.) is the single source of truth so no component hardcodes hex values.
+   595→
+   596→### 12.4 Accessibility
+   597→
+   598→- All interactive elements keyboard-navigable (Shadcn/Radix primitives provide this by default).
+   599→- Color contrast checked against WCAG AA for both themes.
+   600→- Forms use associated `<Label>`s and `aria-describedby` for Zod error messages.
+   601→- Data tables expose sort state via `aria-sort`.
+   602→
+   603→## 13. Security Architecture
+   604→
+   605→| Concern | Mitigation |
+   606→|---|---|
+   607→| OWASP A01 Broken Access Control | 4-layer authorization (Section 8.5); RLS on every table |
+   608→| OWASP A02 Cryptographic Failures | TLS everywhere (Vercel/Supabase enforced); secrets never in client bundle |
+   609→| OWASP A03 Injection | Prisma parameterizes all queries; zero raw string SQL concatenation; Zod validates all input shape/type before it reaches Prisma |
+   610→| XSS | React's default escaping; no `dangerouslySetInnerHTML` except for a sanitized (DOMPurify) rich-text renderer if notes support formatting |
+   611→| CSRF | Server Actions use Next.js's built-in origin-checking; state-changing Route Handlers require same-site cookies + explicit origin header check |
+   612→| File Upload Security | File type allow-list, size limits, virus-scan hook placeholder, storage bucket policies (Section 14) |
+   613→| Secrets Management | All keys in Vercel Environment Variables (per-environment: dev/preview/prod); `SUPABASE_SERVICE_ROLE_KEY` used **only** in trusted server contexts, never exposed to client |
+   614→| Audit Logging | Immutable `audit_logs` table (Section 7.4), DB-level `REVOKE UPDATE, DELETE` |
+   615→| Rate Limiting | Vercel Edge Middleware + Supabase built-in Auth rate limits on login/reset endpoints |
+   616→| Data Retention | Soft-deleted rows purged by a scheduled job only after a configurable retention window, itself audit-logged |
+   617→
+   618→### 13.1 Environment Variables (representative)
+   619→
+   620→| Variable | Scope |
+   621→|---|---|
+   622→| `NEXT_PUBLIC_SUPABASE_URL` | Public |
+   623→| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public (RLS-protected, safe to expose) |
+   624→| `SUPABASE_SERVICE_ROLE_KEY` | Server-only, never `NEXT_PUBLIC_` |
+   625→| `DATABASE_URL` / `DIRECT_URL` | Server-only, Prisma connection (pooled + direct for migrations) |
+   626→| `RESEND_API_KEY` or SMTP creds (if custom email needed beyond Supabase Auth emails) | Server-only |
+   627→
+   628→## 14. File Storage Design
+   629→
+   630→| Bucket | Contents | Access Policy |
+   631→|---|---|---|
+   632→| `profile-photos` | Employee avatars | Public read (via signed/public URL), write restricted to the owning user or HR |
+   633→| `employee-documents` | Offer letters, ID proofs, contracts | Private; read/write restricted to HR (`employee:edit`) and the owning employee for their own docs |
+   634→| `leave-attachments` | Medical certificates etc. attached to leave requests | Private; read restricted to the requester and anyone with `leave:approve` |
+   635→| `report-attachments` | Teacher "notes uploaded" files, marketing collateral | Private; read/write scoped to report owner + HR |
+   636→
+   637→All non-public buckets use Supabase Storage policies mirroring the RLS pattern in 8.4 (`has_permission()` reused), and files are referenced in Postgres by **path only** (never by public URL) — read access is brokered through short-lived **signed URLs** generated server-side at render/download time.
+   638→
+   639→## 15. Realtime Notifications
+   640→
+   641→### 15.1 Delivery Mechanism
+   642→
+   643→`notifications` table insert → Supabase Realtime (Postgres CDC via logical replication) → client subscribes to a **per-user filtered channel** (`notifications:employee_id=eq.<uid>`) → toast + notification-bell badge update, no polling.
+   644→
+   645→```mermaid
+   646→sequenceDiagram
+   647→    participant SVC as Service Layer
+   648→    participant DB as notifications table
+   649→    participant RT as Supabase Realtime
+   650→    participant UI as Recipient Browser
+   651→
+   652→    SVC->>DB: INSERT notification (recipient, type, payload)
+   653→    DB-->>RT: Change event (CDC)
+   654→    RT-->>UI: Push via WebSocket (subscribed channel)
+   655→    UI->>UI: Update bell badge + optional toast
+   656→```
+   657→
+   658→### 15.2 Notification Types
+   659→
+   660→| Type | Trigger | Recipient(s) |
+   661→|---|---|---|
+   662→| `leave.approved` / `leave.rejected` | HR decision on a leave request | Requesting employee |
+   663→| `leave.requested` | Employee submits leave | HR holders of `leave:approve` |
+   664→| `report.reminder` | Scheduled job (e.g., 6 PM) if no report submitted | Employee who hasn't reported |
+   665→| `employee.created` | New employee onboarded | HR team, new employee's manager |
+   666→| `announcement` | HR broadcast composer | Targeted role/department, or org-wide |
+   667→| `system.alert` | Operational issues (rare, admin-triggered) | HR Admins |
+   668→
+   669→Scheduled notifications (e.g., report reminders) are generated by a **Vercel Cron** job hitting a protected Route Handler that queries for employees without a report for the current date and inserts `notifications` rows — Realtime delivery is identical to the direct-insert path.
+   670→
+   671→## 16. Analytics & Reporting
+   672→
+   673→### 16.1 Dashboards
+   674→
+   675→| Dashboard | Key Metrics |
+   676→|---|---|
+   677→| Employee Productivity | Reports submitted vs expected, on-time rate, trend over time |
+   678→| Attendance | Present/absent/leave rate, daily org-wide heatmap, per-department comparison |
+   679→| Teacher Performance | Classes taught, students reached, assignment-check completion rate |
+   680→| Marketing Performance | Calls, meetings, leads generated, conversion rate, deals won, revenue |
+   681→| Department Performance | Cross-department rollups for HR overview |
+   682→| Monthly / Yearly Reports | Exportable summary (CSV/PDF) per period |
+   683→| Top Performers | Ranked leaderboard per role, configurable metric weighting |
+   684→
+   685→### 16.2 Query Optimization Strategy
+   686→
+   687→- **Materialized Postgres views** for expensive aggregations that don't need to-the-second freshness (e.g., `mv_monthly_department_attendance`), refreshed via a nightly Vercel Cron → Route Handler → `REFRESH MATERIALIZED VIEW CONCURRENTLY`.
+   688→- **Indexed date columns** (`attendance_date`, `report_date`, `closed_at`) on all reporting tables — every analytics query filters by a date range first.
+   689→- **Partial indexes** for common filters, e.g. `CREATE INDEX ON leave_requests (status) WHERE status = 'pending'` to keep the HR approval queue query fast regardless of historical leave volume.
+   690→- Heavy dashboard queries are executed via **Prisma raw SQL** (`$queryRaw`) against the views/indexes above rather than doing aggregation in application code — push computation to Postgres.
+   691→- Recharts components receive **pre-aggregated** data from Server Components (fetched via the service/repository layer), never raw row-level data shipped to the client.
+   692→
+   693→## 17. Deployment Architecture & CI/CD
+   694→
+   695→### 17.1 Environment Flow
+   696→
+   697→```mermaid
+   698→flowchart LR
+   699→    Dev["Local Dev\n(Next.js + local Supabase CLI)"] -->|git push branch| GH[GitHub]
+   700→    GH -->|PR opened| CI["GitHub Actions CI\n(lint, typecheck, unit, Playwright)"]
+   701→    CI -->|pass| PV["Vercel Preview Deployment\n+ Supabase branch DB"]
+   702→    PV -->|reviewed & merged to main| PROD["Vercel Production Deployment"]
+   703→    PROD --> SUPA["Supabase Production Project"]
+   704→```
+   705→
+   706→### 17.2 Local Development
+   707→
+   708→- Supabase CLI (`supabase start`) runs a local Postgres + Auth + Storage stack in Docker, mirroring production.
+   709→- `prisma migrate dev` applies migrations locally; `prisma db seed` loads roles/permissions/demo data.
+   710→- `.env.local` holds local Supabase URL/keys; never committed (`.gitignore`).
+   711→
+   712→### 17.3 Preview Deployments
+   713→
+   714→- Every PR triggers a Vercel Preview build **and** a corresponding Supabase preview branch (Supabase's database branching), so each PR gets an isolated database matching the PR's migration state — no shared staging drift.
+   715→
+   716→### 17.4 Production Deployment
+   717→
+   718→- Merge to `main` triggers Vercel production build.
+   719→- `prisma migrate deploy` runs as a build step (or a gated GitHub Actions job before deploy) against the production `DIRECT_URL`, applying only already-reviewed migration files.
+   720→- Migrations are **additive-first**: destructive changes (drop column, etc.) ship in a follow-up release after the code no longer references the old shape, avoiding downtime.
+   721→
+   722→### 17.5 CI/CD Pipeline (GitHub Actions)
+   723→
+   724→| Stage | Action |
+   725→|---|---|
+   726→| Lint & Typecheck | `eslint`, `tsc --noEmit` |
+   727→| Unit/Component Tests | `jest` + React Testing Library |
+   728→| E2E Tests | `playwright test` against a Preview Deployment URL |
+   729→| Migration Check | `prisma migrate diff` to catch drift between schema and migration files |
+   730→| Deploy | Vercel auto-deploys on merge (native GitHub integration); Actions gate the merge, not the deploy itself |
+   731→
+   732→### 17.6 Rollback Strategy
+   733→
+   734→- Vercel: instant rollback to any previous production deployment via the dashboard/CLI (atomic, no rebuild needed).
+   735→- Database: because migrations are additive-first, a code rollback rarely requires a DB rollback; when a schema rollback is unavoidable, a paired "down" migration is authored and reviewed before the risky migration ships.
+   736→
+   737→### 17.7 Backup Strategy
+   738→
+   739→- Supabase automated daily backups (Point-in-Time Recovery on paid tiers) for the production project.
+   740→- Weekly `pg_dump` exported to a separate storage location as an out-of-band backup, retained on a rolling 90-day window.
+   741→
+   742→## 18. Folder Structure
+   743→
+   744→```
+   745→implex-hrms/
+   746→├── app/
+   747→│   ├── (auth)/
+   748→│   │   ├── login/page.tsx
+   749→│   │   └── reset-password/page.tsx
+   750→│   ├── (hr)/
+   751→│   │   ├── layout.tsx              # permission guard for HR route group
+   752→│   │   ├── overview/page.tsx
+   753→│   │   ├── employees/page.tsx
+   754→│   │   ├── attendance/page.tsx
+   755→│   │   ├── leave/page.tsx
+   756→│   │   ├── reports/page.tsx
+   757→│   │   ├── analytics/page.tsx
+   758→│   │   ├── audit-log/page.tsx
+   759→│   │   └── settings/page.tsx
+   760→│   ├── (teacher)/
+   761→│   │   ├── layout.tsx
+   762→│   │   ├── overview/page.tsx
+   763→│   │   ├── report/page.tsx
+   764→│   │   └── history/page.tsx
+   765→│   ├── (marketing)/
+   766→│   │   ├── layout.tsx
+   767→│   │   ├── overview/page.tsx
+   768→│   │   ├── report/page.tsx
+   769→│   │   ├── leads/page.tsx
+   770→│   │   └── deals/page.tsx
+   771→│   ├── (shared)/
+   772→│   │   ├── profile/page.tsx
+   773→│   │   └── notifications/page.tsx
+   774→│   ├── api/
+   775→│   │   └── cron/
+   776→│   │       ├── report-reminders/route.ts
+   777→│   │       └── refresh-analytics-views/route.ts
+   778→│   ├── layout.tsx
+   779→│   └── error.tsx
+   780→├── components/
+   781→│   ├── ui/                          # Shadcn primitives
+   782→│   ├── charts/
+   783→│   ├── data-table/
+   784→│   └── shared/                      # skeletons, empty-states, toasts
+   785→├── lib/
+   786→│   ├── actions/                     # Server Actions, grouped by domain
+   787→│   │   ├── employee.actions.ts
+   788→│   │   ├── leave.actions.ts
+   789→│   │   └── report.actions.ts
+   790→│   ├── services/                    # business rules + permission checks
+   791→│   │   ├── employee.service.ts
+   792→│   │   ├── leave.service.ts
+   793→│   │   └── report-type-registry.ts  # strategy pattern for role reports
+   794→│   ├── repositories/                # Prisma query isolation
+   795→│   ├── validation/                  # Zod schemas (shared client+server)
+   796→│   ├── auth/                        # permission helpers, session utils
+   797→│   ├── supabase/                    # server/client Supabase factories
+   798→│   └── prisma.ts
+   799→├── prisma/
+   800→│   ├── schema/                      # split schema files (Section 7.5)
+   801→│   ├── migrations/
+   802→│   └── seed.ts
+   803→├── middleware.ts
+   804→├── tests/
+   805→│   ├── unit/
+   806→│   ├── integration/
+   807→│   └── e2e/                         # Playwright specs
+   808→└── supabase/
+   809→    ├── migrations/                  # RLS policies, SQL functions
+   810→    └── config.toml
+   811→```
+   812→
+   813→Each folder's responsibility is intentionally narrow: `actions/` never contains business logic (it delegates to `services/`), `services/` never imports Prisma directly (it delegates to `repositories/`) — this is what keeps the codebase testable and keeps role-specific logic out of the routing layer.
+   814→
+   815→## 19. Testing Strategy
+   816→
+   817→| Layer | Tool | Coverage Target |
+   818→|---|---|---|
+   819→| Unit (services, permission logic, Zod schemas) | Jest | ≥ 80% on `lib/services` and `lib/validation` |
+   820→| Component | React Testing Library | Critical shared components (Data Table, forms, Command Palette) |
+   821→| Integration | Jest + a test Supabase branch | Server Actions against a real (ephemeral) Postgres instance |
+   822→| E2E | Playwright | Login → role-based dashboard load, employee CRUD, leave request → approval → notification, teacher/marketing report submission |
+   823→
+   824→E2E suites run against Vercel Preview Deployments in CI (Section 17.5), so every PR is validated end-to-end before merge.
+   825→
+   826→## 20. Development Roadmap
+   827→
+   828→| Week | Milestone |
+   829→|---|---|
+   830→| 1 | Project scaffold: Next.js 16 + TS + Tailwind + Shadcn init; Supabase project provisioning; Prisma connected; base folder structure (Section 18) |
+   831→| 2 | Identity & auth: `users`/`profiles`/`roles`/`permissions` schema, Supabase Auth wiring, middleware session handling, login/reset UI |
+   832→| 3 | RBAC + RLS: `role_permissions`/`user_roles`, `has_permission()` SQL function, RLS policies for identity/employee tables, permission helper library |
+   833→| 4 | Employee management: `employees`/`departments` schema, HR employee CRUD (grid, drawer forms), audit logging groundwork |
+   834→| 5 | Attendance: schema, self check-in/out UI, HR override, holiday calendar |
+   835→| 6 | Leave management: schema, request/approval flows, leave balance logic, notifications wiring (Realtime groundwork) |
+   836→| 7 | Teacher reporting: `teacher_reports`/`teacher_classes`, multi-class form (`useFieldArray`), teacher dashboard overview/history |
+   837→| 8 | Marketing reporting & CRM: `marketing_reports`, leads, follow-ups, deals schema + dashboards, pipeline board UI |
+   838→| 9 | Notifications system: full Realtime integration, broadcast composer, scheduled reminder Cron |
+   839→| 10 | Analytics: materialized views, aggregation queries, Recharts dashboards across all three roles |
+   840→| 11 | File storage: bucket setup, policies, signed-URL flows for documents/attachments/avatars |
+   841→| 12 | Security hardening pass: OWASP checklist review, rate limiting, secrets audit, accessibility audit |
+   842→| 13 | Testing: Jest/RTL suite completion, Playwright E2E critical paths, CI pipeline finalization |
+   843→| 14 | UI polish: dark mode, command palette, skeletons/empty/error states, motion pass |
+   844→| 15 | UAT with HR/Teacher/Marketing pilot users, bug fixing, performance tuning (query plans, index review) |
+   845→| 16 | Production launch: final migrations, backup verification, rollback rehearsal, go-live |
+   846→
+   847→## 21. Appendix
+   848→
+   849→### 21.1 Glossary
+   850→
+   851→| Term | Meaning |
+   852→|---|---|
+   853→| RLS | Row Level Security — Postgres feature restricting row visibility per query based on policy |
+   854→| RBAC | Role-Based Access Control |
+   855→| RSC | React Server Component |
+   856→| CDC | Change Data Capture — how Supabase Realtime observes Postgres writes |
+   857→
+   858→### 21.2 Open Questions for Stakeholder Sign-off
+   859→
+   860→1. Should leave balances be accrual-based (e.g., monthly accrual) or a fixed annual grant per `leave_type`? Affects `leave_requests`/balance schema in a later iteration.
+   861→2. Should report reminders escalate (e.g., notify HR if an employee misses 2+ consecutive days)?
+   862→3. Target values for marketing KPIs/targets (Section 11) — needed to seed the `settings` table's target configuration.
+   863→
+   864→### 21.3 Change Log
+   865→
+   866→| Version | Date | Change |
+   867→|---|---|---|
+   868→| 1.0 | Initial draft | Full SRS + TDD for engineering handoff |
+   869→
