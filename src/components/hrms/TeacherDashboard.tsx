@@ -66,6 +66,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { apiFetch, ApiError } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the API response shapes (kept local to this file).
@@ -221,12 +222,10 @@ function useFetch<T>(url: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as T;
+      const j = await apiFetch<T>(url, { headers: { Accept: "application/json" } });
       setData(j);
     } catch (e) {
-      setError(e as Error);
+      setError(e instanceof ApiError ? new Error(`HTTP ${e.status}`) : (e as Error));
     } finally {
       setLoading(false);
     }
@@ -306,19 +305,19 @@ function AttendanceActionButtons({
   async function act(action: "check_in" | "check_out") {
     setBusy(true);
     try {
-      const r = await fetch("/api/attendance", {
+      await apiFetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success(action === "check_in" ? "Checked in" : "Checked out");
       onDone();
     } catch (e) {
-      toast.error((e as Error).message);
+      if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setBusy(false);
     }
@@ -563,27 +562,25 @@ function DailyReportSection({
           notesUrl: c.notesUrl ?? null,
         })),
       };
-      const r = await fetch("/api/teacher-reports", {
+      await apiFetch("/api/teacher-reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (r.status === 409) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        toast.error(j?.error ?? "Report already submitted for this date.");
-        return;
-      }
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success("Report submitted");
       setNotes("");
       setClasses([{ ...EMPTY_CLASS_ROW }]);
       setReportDate(todayISODate());
       onSubmitted();
     } catch (e) {
-      toast.error((e as Error).message);
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error("Report already submitted for this date.");
+        return;
+      } else if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1091,7 +1088,7 @@ function LeaveSection() {
     }
     setSubmitting(true);
     try {
-      const r = await fetch("/api/leave", {
+      await apiFetch("/api/leave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1102,10 +1099,6 @@ function LeaveSection() {
           attachmentPath,
         }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success("Leave request submitted");
       setReason("");
       setLeaveType("casual");
@@ -1114,7 +1107,11 @@ function LeaveSection() {
       setAttachmentPath(null);
       void leaveFetch.refetch();
     } catch (e2) {
-      toast.error((e2 as Error).message);
+      if (e2 instanceof ApiError) {
+        toast.error(`Failed (${e2.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setSubmitting(false);
     }

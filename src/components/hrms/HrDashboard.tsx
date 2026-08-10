@@ -112,6 +112,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiFetch, ApiError } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the API response shapes (kept local to this file).
@@ -398,12 +399,10 @@ function useFetch<T>(url: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as T;
+      const j = await apiFetch<T>(url, { headers: { Accept: "application/json" } });
       setData(j);
     } catch (e) {
-      setError(e as Error);
+      setError(e instanceof ApiError ? new Error(`HTTP ${e.status}`) : (e as Error));
     } finally {
       setLoading(false);
     }
@@ -700,7 +699,7 @@ function EmployeesSection() {
         phone: form.phone || undefined,
         bio: form.bio || undefined,
       };
-      const r = await fetch(
+      await apiFetch(
         editing ? `/api/employees/${editing.id}` : "/api/employees",
         {
           method: editing ? "PATCH" : "POST",
@@ -708,15 +707,15 @@ function EmployeesSection() {
           body: JSON.stringify(payload),
         }
       );
-      if (!r.ok) {
-        const j = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `HTTP ${r.status}`);
-      }
       toast.success(editing ? "Employee updated" : "Employee added");
       setSheetOpen(false);
       void refetch();
     } catch (e) {
-      toast.error(`Failed: ${(e as Error).message}`);
+      if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -726,13 +725,16 @@ function EmployeesSection() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const r = await fetch(`/api/employees/${deleteTarget.id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await apiFetch(`/api/employees/${deleteTarget.id}`, { method: "DELETE" });
       toast.success(`${deleteTarget.name} offboarded`);
       setDeleteTarget(null);
       void refetch();
     } catch (e) {
-      toast.error(`Failed: ${(e as Error).message}`);
+      if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setDeleting(false);
     }
@@ -1103,7 +1105,7 @@ function AttendanceSection() {
     if (!overrideTarget) return;
     setSubmitting(true);
     try {
-      const r = await fetch("/api/attendance", {
+      await apiFetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1113,16 +1115,16 @@ function AttendanceSection() {
           note: overrideNote || undefined,
         }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `HTTP ${r.status}`);
-      }
       toast.success("Attendance overridden");
       setOverrideTarget(null);
       setOverrideNote("");
       void refetch();
     } catch (e) {
-      toast.error(`Failed: ${(e as Error).message}`);
+      if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1290,16 +1292,19 @@ function LeaveSection() {
   async function decide(id: string, decision: "approved" | "rejected") {
     setDeciding(id);
     try {
-      const r = await fetch(`/api/leave/${id}`, {
+      await apiFetch(`/api/leave/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
       });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       toast.success(`Leave ${decision}`);
       void refetch();
     } catch (e) {
-      toast.error(`Failed: ${(e as Error).message}`);
+      if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setDeciding(null);
     }
@@ -2213,19 +2218,19 @@ function OrgSettingsTab({
     let value: unknown = raw;
     if (raw !== "" && !isNaN(Number(raw))) value = Number(raw);
     try {
-      const r = await fetch("/api/settings", {
+      await apiFetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, value }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `HTTP ${r.status}`);
-      }
       toast.success(`Saved ${key}`);
       onSaved();
     } catch (e) {
-      toast.error(`Failed: ${(e as Error).message}`);
+      if (e instanceof ApiError) {
+        toast.error(`Failed (${e.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setSaving(null);
     }

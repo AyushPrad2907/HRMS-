@@ -478,3 +478,55 @@ Stage Summary:
 - Fixes applied (1):
   * src/components/hrms/TopBar.tsx — changed the search-bar wrapper className from `mx-auto w-full max-w-md` to `mx-auto w-full max-w-md min-w-0 flex-1 sm:flex-none`. On mobile the search bar now `flex-1` fills available space (capped at max-w-md, min-w-0 lets it shrink) so the right-side action buttons (theme toggle, notifications, separator, role switcher) always fit within the viewport. On ≥sm screens `sm:flex-none` restores the original sizing behavior. No other code touched.
 - Remaining issues: none. All 8 verification flows pass in the browser. The single "flaky" item — avatar upload via agent-browser's `upload @ref` command — was worked around via in-page JS dispatch AND verified independently via curl, so the underlying FileUpload + upload API + ProfileSheet integration is confirmed working end-to-end.
+
+---
+Task ID: FIX-401
+Agent: general-purpose
+Task: Replace all raw fetch() calls with apiFetch in HrDashboard, TeacherDashboard, MarketingDashboard to fix cold-start 401
+
+Work Log:
+- Read worklog.md, src/lib/api.ts (apiFetch + ApiError), and all three dashboard files in full to map every fetch() call site.
+- Confirmed apiFetch transparently bootstraps the session cookie on 401 and retries once (sessionEnsured guard prevents loops), and that only NotificationCenter previously used it.
+- HrDashboard.tsx (6 fetch replacements):
+  * Added `import { apiFetch, ApiError } from "@/lib/api";` after the Tabs import.
+  * useFetch<T> hook (line 401): replaced `fetch + r.ok + r.json()` with `apiFetch<T>(...)`; catch now maps ApiError -> `new Error(\`HTTP ${e.status}\`)` to preserve the `HTTP ${status}` error-message contract used by the UI's error state.
+  * Employee upsert (line 703): replaced fetch + ok-check + JSON error parsing with `await apiFetch(...)`; catch now branches on ApiError (`Failed (${e.status})`) vs network error. Preserved success toast, setSheetOpen(false), refetch, setSubmitting(false).
+  * confirmDelete (line 729): same Pattern B treatment for DELETE /api/employees/:id. Preserved success toast, setDeleteTarget(null), refetch, setDeleting(false).
+  * submitOverride (line 1106): same Pattern B treatment for POST /api/attendance with action=override. Preserved success toast, setOverrideTarget(null), setOverrideNote(""), refetch, setSubmitting(false).
+  * decide (line 1293): same Pattern B treatment for PATCH /api/leave/:id. Preserved success toast, refetch, setDeciding(null).
+  * Settings save (line 2216): same Pattern B treatment for PUT /api/settings. Preserved success toast, onSaved(), setSaving(null).
+- TeacherDashboard.tsx (4 fetch replacements):
+  * Added `import { apiFetch, ApiError } from "@/lib/api";` after the Sheet import.
+  * useFetch<T> hook (line 224): Pattern A replacement (same as HrDashboard).
+  * Attendance check-in/out `act` (line 309): Pattern B for POST /api/attendance. Preserved success toast, onDone(), setBusy(false).
+  * Daily report `submit` (line 566): Pattern B with 409 conflict handling — the original `if (r.status === 409)` block is replaced with a catch branch `if (e instanceof ApiError && e.status === 409)` that toasts "Report already submitted for this date." and returns; other ApiError branches use `Failed (${e.status})`. Preserved success toast, setNotes/setClasses/setReportDate reset, onSubmitted(), setSubmitting(false).
+  * Leave request POST (line 1094): Pattern B. Preserved success toast, state resets, leaveFetch.refetch(), setSubmitting(false).
+- MarketingDashboard.tsx (9 fetch replacements):
+  * Added `import { apiFetch, ApiError } from "@/lib/api";` after the Dialog import.
+  * useFetch<T> hook (line 289): Pattern A replacement.
+  * Parallel analytics+settings fetch in OverviewSection useEffect (lines 480-481): replaced `Promise.all([fetch, fetch])` + per-response `if (a.ok) a.json()` with `Promise.allSettled([apiFetch<AnalyticsResponse>, apiFetch<SettingsResponse>])` and per-result `if (results[i].status === "fulfilled")` checks. This preserves the original "best-effort" semantics (a 401 on /api/analytics no longer blocks /api/settings) while still letting apiFetch bootstrap the session on the first 401.
+  * Marketing report POST `submit` (line 675): Pattern B with 409 conflict handling — catch branch `if (e instanceof ApiError && e.status === 409)` toasts "A report already exists for this date"; other ApiError branches use `Failed to submit report` (description: `HTTP ${e.status}`). Preserved success toast, full state reset, onSubmitted(), setSubmitting(false).
+  * Leads `changeStatus` PATCH (line 993): Pattern B. Preserved success toast, refetch.
+  * AddLeadDialog `submit` POST (line 1122): Pattern B. Preserved success toast, reset(), onOpenChange(false), onCreated(), onSaving(false).
+  * Deals `changeStage` PATCH (line 1321): Pattern B. Preserved success toast, refetch.
+  * Followups `toggle` PATCH (line 1452): Pattern B. Preserved success toast, refetch.
+  * Leave request POST (line 1642): Pattern B. Preserved success toast, state resets, leaveFetch.refetch(), setSubmitting(false).
+- Re-verified no `await fetch(` and no `\bfetch(` remain in any of the three dashboard files.
+- Ran `npx tsc --noEmit` — only unrelated errors in examples/ and skills/ directories; zero errors mention HrDashboard, TeacherDashboard, or MarketingDashboard.
+- Ran `bun run lint` — only 1 unrelated warning in prisma/seed.ts; zero errors/warnings for the three dashboard files.
+- Cold-start verification: cleared dev.log, then simulated the apiFetch sequence with curl (no cookie):
+    GET /api/notifications -> 401
+    GET /api/session       -> 200 (Set-Cookie: implex_session_emp=emp-priya)
+    GET /api/notifications -> 200 (retry succeeds)
+  dev.log shows the expected pattern: initial 401s followed by `/api/session 200` and the retry `200`. Without apiFetch, the dashboard would surface "Failed to load / HTTP 401" instead of retrying.
+
+Stage Summary:
+- HrDashboard.tsx: 6 raw fetch() calls replaced with apiFetch (1 useFetch hook + 5 mutations).
+- TeacherDashboard.tsx: 4 raw fetch() calls replaced (1 useFetch hook + 3 mutations, incl. one 409 conflict path).
+- MarketingDashboard.tsx: 9 raw fetch() calls replaced (1 useFetch hook + 2 parallel Promise.all fetches + 6 mutations, incl. one 409 conflict path).
+- Total: 19 fetch() calls replaced across the three dashboards.
+- Verification: `rg -n "await fetch\(" src/components/hrms/{HrDashboard,TeacherDashboard,MarketingDashboard}.tsx` returns zero matches; `rg -n "\bfetch\("` also returns zero matches.
+- `npx tsc --noEmit` clean for the three dashboard files (no HrDashboard/TeacherDashboard/MarketingDashboard errors).
+- `bun run lint` clean for the three dashboard files.
+- Cold-start curl test: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/` returns 200; dev.log shows 401 -> /api/session 200 -> 200 retry pattern as expected.
+- No other files touched (no API routes, no page.tsx, no other components). Emerald accent preserved (no color changes). TypeScript strict, no `any`.

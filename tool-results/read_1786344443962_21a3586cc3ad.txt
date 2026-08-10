@@ -1,0 +1,2002 @@
+     1→"use client";
+     2→
+     3→import * as React from "react";
+     4→import { toast } from "sonner";
+     5→import {
+     6→  LayoutDashboard,
+     7→  Users,
+     8→  CalendarCheck,
+     9→  Plane,
+    10→  FileText,
+    11→  BarChart3,
+    12→  ScrollText,
+    13→  Settings as SettingsIcon,
+    14→  Plus,
+    15→  Pencil,
+    16→  Trash2,
+    17→  Search,
+    18→  Check,
+    19→  UserPlus,
+    20→  FileCheck2,
+    21→  ClipboardList,
+    22→  Activity,
+    23→  ShieldAlert,
+    24→  Megaphone,
+    25→  Paperclip,
+    26→} from "lucide-react";
+    27→import {
+    28→  Bar,
+    29→  BarChart,
+    30→  CartesianGrid,
+    31→  Cell,
+    32→  Line,
+    33→  LineChart,
+    34→  Pie,
+    35→  PieChart,
+    36→  ResponsiveContainer,
+    37→  Tooltip,
+    38→  XAxis,
+    39→  YAxis,
+    40→  Legend,
+    41→} from "recharts";
+    42→
+    43→import { cn } from "@/lib/utils";
+    44→import type { Candidate, SessionUser } from "@/lib/types";
+    45→import AppShell from "@/components/hrms/AppShell";
+    46→import Sidebar, { type NavItem } from "@/components/hrms/Sidebar";
+    47→import {
+    48→  KpiCard,
+    49→  SectionHeader,
+    50→  EmptyState,
+    51→  StatusBadge,
+    52→  formatDate,
+    53→  formatDateTime,
+    54→  formatRelativeTime,
+    55→  formatCurrency,
+    56→  Badge,
+    57→} from "@/components/hrms/shared";
+    58→import BroadcastComposer from "@/components/hrms/BroadcastComposer";
+    59→
+    60→import { Button } from "@/components/ui/button";
+    61→import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+    62→import { Input } from "@/components/ui/input";
+    63→import { Label } from "@/components/ui/label";
+    64→import { Textarea } from "@/components/ui/textarea";
+    65→import { Skeleton } from "@/components/ui/skeleton";
+    66→import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+    67→import {
+    68→  Table,
+    69→  TableBody,
+    70→  TableCell,
+    71→  TableHead,
+    72→  TableHeader,
+    73→  TableRow,
+    74→} from "@/components/ui/table";
+    75→import {
+    76→  Select,
+    77→  SelectContent,
+    78→  SelectItem,
+    79→  SelectTrigger,
+    80→  SelectValue,
+    81→} from "@/components/ui/select";
+    82→import {
+    83→  Sheet,
+    84→  SheetContent,
+    85→  SheetDescription,
+    86→  SheetFooter,
+    87→  SheetHeader,
+    88→  SheetTitle,
+    89→} from "@/components/ui/sheet";
+    90→import {
+    91→  Dialog,
+    92→  DialogContent,
+    93→  DialogDescription,
+    94→  DialogFooter,
+    95→  DialogHeader,
+    96→  DialogTitle,
+    97→} from "@/components/ui/dialog";
+    98→import {
+    99→  AlertDialog,
+   100→  AlertDialogAction,
+   101→  AlertDialogCancel,
+   102→  AlertDialogContent,
+   103→  AlertDialogDescription,
+   104→  AlertDialogFooter,
+   105→  AlertDialogHeader,
+   106→  AlertDialogTitle,
+   107→} from "@/components/ui/alert-dialog";
+   108→import {
+   109→  DropdownMenu,
+   110→  DropdownMenuContent,
+   111→  DropdownMenuItem,
+   112→  DropdownMenuTrigger,
+   113→} from "@/components/ui/dropdown-menu";
+   114→import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+   115→
+   116→// ---------------------------------------------------------------------------
+   117→// Types — mirror the API response shapes (kept local to this file).
+   118→// ---------------------------------------------------------------------------
+   119→
+   120→type Kpi = { label: string; value: number; delta: number; hint: string };
+   121→type ActivityItem = {
+   122→  id: string;
+   123→  activity: string;
+   124→  actor: string;
+   125→  at: string;
+   126→  meta?: string | null;
+   127→};
+   128→
+   129→type Employee = {
+   130→  id: string;
+   131→  employeeCode: string;
+   132→  name: string;
+   133→  email: string;
+   134→  phone: string | null;
+   135→  bio: string | null;
+   136→  avatarUrl: string | null;
+   137→  designation: string;
+   138→  department: string;
+   139→  departmentId: string;
+   140→  employmentStatus: string;
+   141→  joinDate: string;
+   142→  manager: string | null;
+   143→  managerId: string | null;
+   144→  roles: { name: string; label: string }[];
+   145→  userId: string;
+   146→};
+   147→
+   148→type Department = {
+   149→  id: string;
+   150→  name: string;
+   151→  code: string;
+   152→  description: string | null;
+   153→};
+   154→
+   155→type Role = {
+   156→  id: string;
+   157→  name: string;
+   158→  label: string;
+   159→  description: string | null;
+   160→  permissions: string[];
+   161→};
+   162→
+   163→type Permission = { id: string; name: string; description: string | null };
+   164→
+   165→type AttendanceItem = {
+   166→  id: string;
+   167→  employeeId: string;
+   168→  employee: string;
+   169→  code: string;
+   170→  department: string;
+   171→  date: string;
+   172→  status: string;
+   173→  checkIn: string | null;
+   174→  checkOut: string | null;
+   175→  note: string | null;
+   176→};
+   177→
+   178→type LeaveItem = {
+   179→  id: string;
+   180→  employeeId: string;
+   181→  employee: string;
+   182→  code: string;
+   183→  department: string;
+   184→  leaveType: string;
+   185→  startDate: string;
+   186→  endDate: string;
+   187→  days: number;
+   188→  reason: string;
+   189→  status: string;
+   190→  approver: string | null;
+   191→  decidedAt: string | null;
+   192→  createdAt: string;
+   193→  attachmentPath: string | null;
+   194→};
+   195→
+   196→type TeacherClass = {
+   197→  id: string;
+   198→  batch: string;
+   199→  subject: string;
+   200→  topicsCovered: string;
+   201→  studentsAttended: number;
+   202→  assignmentsChecked: boolean;
+   203→  notesUrl: string | null;
+   204→};
+   205→
+   206→type MarketingCall = {
+   207→  id: string;
+   208→  contactName: string;
+   209→  contactPhone: string | null;
+   210→  outcome: string;
+   211→  notes: string | null;
+   212→};
+   213→
+   214→type MarketingMeeting = {
+   215→  id: string;
+   216→  counterparty: string;
+   217→  purpose: string;
+   218→  outcome: string | null;
+   219→  durationMinutes: number;
+   220→};
+   221→
+   222→type TeacherReportItem = {
+   223→  id: string;
+   224→  employeeId: string;
+   225→  employee: string;
+   226→  code: string;
+   227→  department: string;
+   228→  reportDate: string;
+   229→  submittedAt: string;
+   230→  notes: string | null;
+   231→  classes: TeacherClass[];
+   232→};
+   233→
+   234→type MarketingReportItem = {
+   235→  id: string;
+   236→  employeeId: string;
+   237→  employee: string;
+   238→  code: string;
+   239→  department: string;
+   240→  reportDate: string;
+   241→  submittedAt: string;
+   242→  notes: string | null;
+   243→  callsCount: number;
+   244→  meetingsCount: number;
+   245→  calls: MarketingCall[];
+   246→  meetings: MarketingMeeting[];
+   247→};
+   248→
+   249→type UnifiedReport = {
+   250→  id: string;
+   251→  type: "teacher" | "marketing";
+   252→  employee: string;
+   253→  code: string;
+   254→  department: string;
+   255→  reportDate: string;
+   256→  submittedAt: string;
+   257→  notes: string | null;
+   258→  classes: TeacherClass[];
+   259→  calls: MarketingCall[];
+   260→  meetings: MarketingMeeting[];
+   261→};
+   262→
+   263→type AuditItem = {
+   264→  id: string;
+   265→  actor: string;
+   266→  action: string;
+   267→  targetTable: string;
+   268→  targetId: string;
+   269→  beforeState: string | null;
+   270→  afterState: string | null;
+   271→  ipAddress: string | null;
+   272→  createdAt: string;
+   273→};
+   274→
+   275→type Holiday = {
+   276→  id: string;
+   277→  name: string;
+   278→  holidayDate: string;
+   279→  description: string | null;
+   280→};
+   281→
+   282→type SettingItem = { key: string; value: unknown };
+   283→
+   284→type AnalyticsAttendanceTrendPoint = {
+   285→  date: string;
+   286→  present: number;
+   287→  absent: number;
+   288→  onLeave: number;
+   289→  halfDay: number;
+   290→};
+   291→
+   292→type AnalyticsReportTrendPoint = {
+   293→  date: string;
+   294→  teacherReports: number;
+   295→  marketingReports: number;
+   296→};
+   297→
+   298→type AnalyticsFunnel = {
+   299→  byStatus: { new: number; contacted: number; qualified: number; lost: number; converted: number };
+   300→  dealsByStage: {
+   301→    prospecting: number;
+   302→    proposal: number;
+   303→    negotiation: number;
+   304→    won: number;
+   305→    lost: number;
+   306→  };
+   307→  revenueWon: number;
+   308→  pipelineValue: number;
+   309→};
+   310→
+   311→type AnalyticsPerformer = {
+   312→  employeeId: string;
+   313→  name: string;
+   314→  role: string;
+   315→  metric: number;
+   316→  metricLabel: string;
+   317→};
+   318→
+   319→type AnalyticsData = {
+   320→  attendanceTrend: AnalyticsAttendanceTrendPoint[];
+   321→  reportTrend: AnalyticsReportTrendPoint[];
+   322→  marketingFunnel: AnalyticsFunnel;
+   323→  departmentHeadcount: { department: string; count: number }[];
+   324→  topPerformers: AnalyticsPerformer[];
+   325→  leaveStats: {
+   326→    pending: number;
+   327→    approved: number;
+   328→    rejected: number;
+   329→    byType: { casual: number; sick: number; earned: number; unpaid: number };
+   330→  };
+   331→};
+   332→
+   333→// ---------------------------------------------------------------------------
+   334→// Constants & helpers
+   335→// ---------------------------------------------------------------------------
+   336→
+   337→const HR_NAV: NavItem[] = [
+   338→  { id: "overview", label: "Overview", icon: <LayoutDashboard /> },
+   339→  { id: "employees", label: "Employees", icon: <Users /> },
+   340→  { id: "attendance", label: "Attendance", icon: <CalendarCheck /> },
+   341→  { id: "leave", label: "Leave", icon: <Plane /> },
+   342→  { id: "reports", label: "Reports", icon: <FileText /> },
+   343→  { id: "analytics", label: "Analytics", icon: <BarChart3 /> },
+   344→  { id: "audit", label: "Audit Log", icon: <ScrollText /> },
+   345→  { id: "announce", label: "Announce", icon: <Megaphone /> },
+   346→  { id: "settings", label: "Settings", icon: <SettingsIcon /> },
+   347→];
+   348→
+   349→// Emerald / sky / amber / rose / violet — fixed hex for recharts SVG fills.
+   350→const COLORS = ["#10b981", "#0ea5e9", "#f59e0b", "#ef4444", "#8b5cf6"];
+   351→
+   352→const ATTENDANCE_STATUSES = ["present", "absent", "half_day", "on_leave", "holiday"] as const;
+   353→const EMPLOYEE_STATUSES = ["active", "on_leave_emp", "suspended", "offboarded"] as const;
+   354→const ALL_SENTINEL = "__all";
+   355→
+   356→function shortDate(s: string): string {
+   357→  const d = new Date(s);
+   358→  if (isNaN(d.getTime())) return s;
+   359→  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(d);
+   360→}
+   361→
+   362→function toDateInputValue(iso: string | null | undefined): string {
+   363→  if (!iso) return "";
+   364→  const d = new Date(iso);
+   365→  if (isNaN(d.getTime())) return "";
+   366→  const y = d.getFullYear();
+   367→  const m = String(d.getMonth() + 1).padStart(2, "0");
+   368→  const day = String(d.getDate()).padStart(2, "0");
+   369→  return `${y}-${m}-${day}`;
+   370→}
+   371→
+   372→function initials(name: string): string {
+   373→  return name
+   374→    .split(" ")
+   375→    .map((p) => p[0])
+   376→    .filter(Boolean)
+   377→    .slice(0, 2)
+   378→    .join("")
+   379→    .toUpperCase();
+   380→}
+   381→
+   382→/**
+   383→ * Tiny data-fetching hook — `null` URL skips fetching. Stale data stays
+   384→ * visible while `loading` is true on subsequent refetches (the skeleton only
+   385→ * shows when we have no data yet).
+   386→ */
+   387→function useFetch<T>(url: string | null) {
+   388→  const [data, setData] = React.useState<T | null>(null);
+   389→  const [loading, setLoading] = React.useState<boolean>(url !== null);
+   390→  const [error, setError] = React.useState<Error | null>(null);
+   391→
+   392→  const refetch = React.useCallback(async () => {
+   393→    if (!url) {
+   394→      setData(null);
+   395→      setLoading(false);
+   396→      return;
+   397→    }
+   398→    setLoading(true);
+   399→    setError(null);
+   400→    try {
+   401→      const r = await fetch(url, { headers: { Accept: "application/json" } });
+   402→      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+   403→      const j = (await r.json()) as T;
+   404→      setData(j);
+   405→    } catch (e) {
+   406→      setError(e as Error);
+   407→    } finally {
+   408→      setLoading(false);
+   409→    }
+   410→  }, [url]);
+   411→
+   412→  React.useEffect(() => {
+   413→    void refetch();
+   414→  }, [refetch]);
+   415→
+   416→  return { data, loading, error, refetch };
+   417→}
+   418→
+   419→/** Card with a title and a fixed-height chart container. */
+   420→function ChartCard({
+   421→  title,
+   422→  description,
+   423→  children,
+   424→  className,
+   425→}: {
+   426→  title: string;
+   427→  description?: string;
+   428→  children: React.ReactNode;
+   429→  className?: string;
+   430→}) {
+   431→  return (
+   432→    <Card className={cn("gap-0 px-6 py-5", className)}>
+   433→      <CardHeader className="px-0 pb-3">
+   434→        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+   435→        {description ? (
+   436→          <p className="text-xs text-muted-foreground">{description}</p>
+   437→        ) : null}
+   438→      </CardHeader>
+   439→      <CardContent className="px-0 text-muted-foreground">
+   440→        {children}
+   441→      </CardContent>
+   442→    </Card>
+   443→  );
+   444→}
+   445→
+   446→function SectionSkeleton({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+   447→  return (
+   448→    <div className="space-y-4">
+   449→      <Skeleton className="h-9 w-48" />
+   450→      <Card className="px-0 py-0">
+   451→        <Table>
+   452→          <TableHeader>
+   453→            <TableRow>
+   454→              {Array.from({ length: cols }).map((_, i) => (
+   455→                <TableHead key={i}>
+   456→                  <Skeleton className="h-4 w-20" />
+   457→                </TableHead>
+   458→              ))}
+   459→            </TableRow>
+   460→          </TableHeader>
+   461→          <TableBody>
+   462→            {Array.from({ length: rows }).map((_, i) => (
+   463→              <TableRow key={i}>
+   464→                {Array.from({ length: cols }).map((_, j) => (
+   465→                  <TableCell key={j}>
+   466→                    <Skeleton className="h-4 w-full max-w-[10rem]" />
+   467→                  </TableCell>
+   468→                ))}
+   469→              </TableRow>
+   470→            ))}
+   471→          </TableBody>
+   472→        </Table>
+   473→      </Card>
+   474→    </div>
+   475→  );
+   476→}
+   477→
+   478→function ErrorState({ message }: { message: string }) {
+   479→  return (
+   480→    <EmptyState
+   481→      icon={<ShieldAlert />}
+   482→      title="Failed to load"
+   483→      description={message}
+   484→    />
+   485→  );
+   486→}
+   487→
+   488→// ---------------------------------------------------------------------------
+   489→// 1. Overview
+   490→// ---------------------------------------------------------------------------
+   491→
+   492→function OverviewSection({ onNavigate }: { onNavigate: (id: string) => void }) {
+   493→  const { data, loading, error } = useFetch<{
+   494→    role: string;
+   495→    kpis: Kpi[];
+   496→    recentActivity: ActivityItem[];
+   497→  }>("/api/overview");
+   498→
+   499→  if (loading && !data) {
+   500→    return (
+   501→      <div className="space-y-6">
+   502→        <Skeleton className="h-9 w-48" />
+   503→        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   504→          {Array.from({ length: 4 }).map((_, i) => (
+   505→            <Skeleton key={i} className="h-28 w-full" />
+   506→          ))}
+   507→        </div>
+   508→        <Skeleton className="h-64 w-full" />
+   509→      </div>
+   510→    );
+   511→  }
+   512→
+   513→  if (error || !data) {
+   514→    return <ErrorState message={error?.message ?? "No data"} />;
+   515→  }
+   516→
+   517→  return (
+   518→    <div className="space-y-6">
+   519→      <SectionHeader title="Overview" description="Organization pulse at a glance" />
+   520→
+   521→      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+   522→        {data.kpis.map((kpi) => (
+   523→          <KpiCard
+   524→            key={kpi.label}
+   525→            label={kpi.label}
+   526→            value={kpi.value}
+   527→            delta={kpi.delta}
+   528→            hint={kpi.hint}
+   529→          />
+   530→        ))}
+   531→      </div>
+   532→
+   533→      <Card className="px-6 py-5">
+   534→        <CardHeader className="px-0 pb-3">
+   535→          <CardTitle className="text-sm font-semibold">Quick Actions</CardTitle>
+   536→        </CardHeader>
+   537→        <CardContent className="px-0">
+   538→          <div className="flex flex-wrap gap-2">
+   539→            <Button onClick={() => onNavigate("employees")}>
+   540→              <UserPlus className="size-4" />
+   541→              Add Employee
+   542→            </Button>
+   543→            <Button variant="outline" onClick={() => onNavigate("leave")}>
+   544→              <FileCheck2 className="size-4" />
+   545→              Review Leave
+   546→            </Button>
+   547→            <Button variant="outline" onClick={() => onNavigate("reports")}>
+   548→              <ClipboardList className="size-4" />
+   549→              View Reports
+   550→            </Button>
+   551→          </div>
+   552→        </CardContent>
+   553→      </Card>
+   554→
+   555→      <Card className="px-6 py-5">
+   556→        <CardHeader className="px-0 pb-3">
+   557→          <CardTitle className="text-sm font-semibold">Recent Activity</CardTitle>
+   558→        </CardHeader>
+   559→        <CardContent className="px-0">
+   560→          {data.recentActivity.length === 0 ? (
+   561→            <EmptyState title="No activity yet" />
+   562→          ) : (
+   563→            <ul className="divide-y">
+   564→              {data.recentActivity.map((a) => (
+   565→                <li key={a.id} className="flex items-start gap-3 py-3">
+   566→                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+   567→                    <Activity className="size-4" />
+   568→                  </span>
+   569→                  <div className="min-w-0 flex-1">
+   570→                    <p className="text-sm">
+   571→                      <span className="font-medium">{a.actor}</span>
+   572→                      <span className="text-muted-foreground"> · {a.activity}</span>
+   573→                    </p>
+   574→                    <p className="text-xs text-muted-foreground">
+   575→                      {formatRelativeTime(a.at)}
+   576→                    </p>
+   577→                  </div>
+   578→                </li>
+   579→              ))}
+   580→            </ul>
+   581→          )}
+   582→        </CardContent>
+   583→      </Card>
+   584→    </div>
+   585→  );
+   586→}
+   587→
+   588→// ---------------------------------------------------------------------------
+   589→// 2. Employees
+   590→// ---------------------------------------------------------------------------
+   591→
+   592→type EmployeeFormState = {
+   593→  displayName: string;
+   594→  email: string;
+   595→  employeeCode: string;
+   596→  departmentId: string;
+   597→  designation: string;
+   598→  roleId: string;
+   599→  joinDate: string;
+   600→  phone: string;
+   601→  bio: string;
+   602→};
+   603→
+   604→const EMPTY_FORM: EmployeeFormState = {
+   605→  displayName: "",
+   606→  email: "",
+   607→  employeeCode: "",
+   608→  departmentId: "",
+   609→  designation: "",
+   610→  roleId: "",
+   611→  joinDate: "",
+   612→  phone: "",
+   613→  bio: "",
+   614→};
+   615→
+   616→function EmployeesSection() {
+   617→  const [q, setQ] = React.useState("");
+   618→  const [debouncedQ, setDebouncedQ] = React.useState("");
+   619→  const [dept, setDept] = React.useState("");
+   620→  const [status, setStatus] = React.useState("");
+   621→
+   622→  React.useEffect(() => {
+   623→    const t = setTimeout(() => setDebouncedQ(q), 300);
+   624→    return () => clearTimeout(t);
+   625→  }, [q]);
+   626→
+   627→  const url = `/api/employees?q=${encodeURIComponent(debouncedQ)}&dept=${encodeURIComponent(dept)}&status=${encodeURIComponent(status)}`;
+   628→  const { data, loading, error, refetch } = useFetch<{
+   629→    items: Employee[];
+   630→    canCreate: boolean;
+   631→    canEdit: boolean;
+   632→  }>(url);
+   633→  const { data: deptData } = useFetch<{ items: Department[] }>("/api/departments");
+   634→  const { data: roleData } = useFetch<{ roles: Role[]; permissions: Permission[] }>(
+   635→    "/api/roles"
+   636→  );
+   637→
+   638→  const [sheetOpen, setSheetOpen] = React.useState(false);
+   639→  const [editing, setEditing] = React.useState<Employee | null>(null);
+   640→  const [form, setForm] = React.useState<EmployeeFormState>(EMPTY_FORM);
+   641→  const [submitting, setSubmitting] = React.useState(false);
+   642→  const [deleteTarget, setDeleteTarget] = React.useState<Employee | null>(null);
+   643→  const [deleting, setDeleting] = React.useState(false);
+   644→
+   645→  React.useEffect(() => {
+   646→    if (!sheetOpen) return;
+   647→    if (editing) {
+   648→      const initialRoleId =
+   649→        roleData?.roles.find((r) => r.name === editing.roles[0]?.name)?.id ?? "";
+   650→      setForm({
+   651→        displayName: editing.name,
+   652→        email: editing.email,
+   653→        employeeCode: editing.employeeCode,
+   654→        departmentId: editing.departmentId,
+   655→        designation: editing.designation,
+   656→        roleId: initialRoleId,
+   657→        joinDate: toDateInputValue(editing.joinDate),
+   658→        phone: editing.phone ?? "",
+   659→        bio: editing.bio ?? "",
+   660→      });
+   661→    } else {
+   662→      setForm(EMPTY_FORM);
+   663→    }
+   664→  }, [sheetOpen, editing, roleData]);
+   665→
+   666→  function openAdd() {
+   667→    setEditing(null);
+   668→    setSheetOpen(true);
+   669→  }
+   670→
+   671→  function openEdit(emp: Employee) {
+   672→    setEditing(emp);
+   673→    setSheetOpen(true);
+   674→  }
+   675→
+   676→  async function submitForm(e: React.FormEvent) {
+   677→    e.preventDefault();
+   678→    if (
+   679→      !form.displayName ||
+   680→      !form.email ||
+   681→      !form.employeeCode ||
+   682→      !form.departmentId ||
+   683→      !form.designation ||
+   684→      !form.roleId ||
+   685→      !form.joinDate
+   686→    ) {
+   687→      toast.error("Please fill all required fields");
+   688→      return;
+   689→    }
+   690→    setSubmitting(true);
+   691→    try {
+   692→      const payload = {
+   693→        displayName: form.displayName,
+   694→        email: form.email,
+   695→        employeeCode: form.employeeCode,
+   696→        departmentId: form.departmentId,
+   697→        designation: form.designation,
+   698→        roleId: form.roleId,
+   699→        joinDate: form.joinDate,
+   700→        phone: form.phone || undefined,
+   701→        bio: form.bio || undefined,
+   702→      };
+   703→      const r = await fetch(
+   704→        editing ? `/api/employees/${editing.id}` : "/api/employees",
+   705→        {
+   706→          method: editing ? "PATCH" : "POST",
+   707→          headers: { "Content-Type": "application/json" },
+   708→          body: JSON.stringify(payload),
+   709→        }
+   710→      );
+   711→      if (!r.ok) {
+   712→        const j = (await r.json().catch(() => ({}))) as { error?: string };
+   713→        throw new Error(j.error ?? `HTTP ${r.status}`);
+   714→      }
+   715→      toast.success(editing ? "Employee updated" : "Employee added");
+   716→      setSheetOpen(false);
+   717→      void refetch();
+   718→    } catch (e) {
+   719→      toast.error(`Failed: ${(e as Error).message}`);
+   720→    } finally {
+   721→      setSubmitting(false);
+   722→    }
+   723→  }
+   724→
+   725→  async function confirmDelete() {
+   726→    if (!deleteTarget) return;
+   727→    setDeleting(true);
+   728→    try {
+   729→      const r = await fetch(`/api/employees/${deleteTarget.id}`, { method: "DELETE" });
+   730→      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+   731→      toast.success(`${deleteTarget.name} offboarded`);
+   732→      setDeleteTarget(null);
+   733→      void refetch();
+   734→    } catch (e) {
+   735→      toast.error(`Failed: ${(e as Error).message}`);
+   736→    } finally {
+   737→      setDeleting(false);
+   738→    }
+   739→  }
+   740→
+   741→  const items = data?.items ?? [];
+   742→  const canCreate = data?.canCreate ?? false;
+   743→  const canEdit = data?.canEdit ?? false;
+   744→
+   745→  return (
+   746→    <div className="space-y-6">
+   747→      <SectionHeader
+   748→        title="Employees"
+   749→        description="Manage your workforce"
+   750→        action={
+   751→          canCreate ? (
+   752→            <Button onClick={openAdd}>
+   753→              <Plus className="size-4" />
+   754→              Add Employee
+   755→            </Button>
+   756→          ) : null
+   757→        }
+   758→      />
+   759→
+   760→      <Card className="px-4 py-3">
+   761→        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+   762→          <div className="relative flex-1">
+   763→            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+   764→            <Input
+   765→              value={q}
+   766→              onChange={(e) => setQ(e.target.value)}
+   767→              placeholder="Search name, code or email…"
+   768→              className="pl-9"
+   769→            />
+   770→          </div>
+   771→          <Select
+   772→            value={dept || ALL_SENTINEL}
+   773→            onValueChange={(v) => setDept(v === ALL_SENTINEL ? "" : v)}
+   774→          >
+   775→            <SelectTrigger className="w-full sm:w-48">
+   776→              <SelectValue placeholder="All departments" />
+   777→            </SelectTrigger>
+   778→            <SelectContent>
+   779→              <SelectItem value={ALL_SENTINEL}>All departments</SelectItem>
+   780→              {(deptData?.items ?? []).map((d) => (
+   781→                <SelectItem key={d.id} value={d.id}>
+   782→                  {d.name}
+   783→                </SelectItem>
+   784→              ))}
+   785→            </SelectContent>
+   786→          </Select>
+   787→          <Select
+   788→            value={status || ALL_SENTINEL}
+   789→            onValueChange={(v) => setStatus(v === ALL_SENTINEL ? "" : v)}
+   790→          >
+   791→            <SelectTrigger className="w-full sm:w-44">
+   792→              <SelectValue placeholder="All statuses" />
+   793→            </SelectTrigger>
+   794→            <SelectContent>
+   795→              <SelectItem value={ALL_SENTINEL}>All statuses</SelectItem>
+   796→              {EMPLOYEE_STATUSES.map((s) => (
+   797→                <SelectItem key={s} value={s}>
+   798→                  {s === "on_leave_emp" ? "On Leave" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+   799→                </SelectItem>
+   800→              ))}
+   801→            </SelectContent>
+   802→          </Select>
+   803→        </div>
+   804→      </Card>
+   805→
+   806→      {loading && !data ? (
+   807→        <SectionSkeleton rows={6} cols={6} />
+   808→      ) : error ? (
+   809→        <ErrorState message={error.message} />
+   810→      ) : items.length === 0 ? (
+   811→        <EmptyState
+   812→          icon={<Users />}
+   813→          title="No employees"
+   814→          description="Try adjusting filters, or add a new employee."
+   815→          action={
+   816→            canCreate ? (
+   817→              <Button onClick={openAdd}>
+   818→                <Plus className="size-4" />
+   819→                Add Employee
+   820→              </Button>
+   821→            ) : null
+   822→          }
+   823→        />
+   824→      ) : (
+   825→        <Card className="gap-0 px-0 py-0">
+   826→          <div className="max-h-[70vh] overflow-y-auto">
+   827→            <Table>
+   828→              <TableHeader className="sticky top-0 z-10 bg-card">
+   829→                <TableRow>
+   830→                  <TableHead>Code</TableHead>
+   831→                  <TableHead>Name</TableHead>
+   832→                  <TableHead>Designation</TableHead>
+   833→                  <TableHead>Department</TableHead>
+   834→                  <TableHead>Manager</TableHead>
+   835→                  <TableHead>Status</TableHead>
+   836→                  <TableHead>Roles</TableHead>
+   837→                  {canEdit ? <TableHead className="text-right">Actions</TableHead> : null}
+   838→                </TableRow>
+   839→              </TableHeader>
+   840→              <TableBody>
+   841→                {items.map((emp) => (
+   842→                  <TableRow key={emp.id}>
+   843→                    <TableCell className="font-mono text-xs">{emp.employeeCode}</TableCell>
+   844→                    <TableCell>
+   845→                      <div className="flex items-center gap-2">
+   846→                        <Avatar className="size-8">
+   847→                          {emp.avatarUrl ? (
+   848→                            <AvatarImage src={emp.avatarUrl} alt={emp.name} />
+   849→                          ) : null}
+   850→                          <AvatarFallback className="text-xs">
+   851→                            {initials(emp.name)}
+   852→                          </AvatarFallback>
+   853→                        </Avatar>
+   854→                        <div className="min-w-0">
+   855→                          <div className="truncate font-medium">{emp.name}</div>
+   856→                          <div className="truncate text-xs text-muted-foreground">
+   857→                            {emp.email}
+   858→                          </div>
+   859→                        </div>
+   860→                      </div>
+   861→                    </TableCell>
+   862→                    <TableCell>{emp.designation}</TableCell>
+   863→                    <TableCell>{emp.department}</TableCell>
+   864→                    <TableCell className="text-muted-foreground">
+   865→                      {emp.manager ?? "—"}
+   866→                    </TableCell>
+   867→                    <TableCell>
+   868→                      <StatusBadge status={emp.employmentStatus} />
+   869→                    </TableCell>
+   870→                    <TableCell>
+   871→                      <div className="flex flex-wrap gap-1">
+   872→                        {emp.roles.map((r) => (
+   873→                          <Badge key={r.name} variant="secondary" className="text-[10px]">
+   874→                            {r.label}
+   875→                          </Badge>
+   876→                        ))}
+   877→                      </div>
+   878→                    </TableCell>
+   879→                    {canEdit ? (
+   880→                      <TableCell className="text-right">
+   881→                        <DropdownMenu>
+   882→                          <DropdownMenuTrigger asChild>
+   883→                            <Button variant="ghost" size="icon" className="size-8">
+   884→                              <Pencil className="size-4" />
+   885→                              <span className="sr-only">Open menu</span>
+   886→                            </Button>
+   887→                          </DropdownMenuTrigger>
+   888→                          <DropdownMenuContent align="end">
+   889→                            <DropdownMenuItem onClick={() => openEdit(emp)}>
+   890→                              <Pencil className="size-4" />
+   891→                              Edit
+   892→                            </DropdownMenuItem>
+   893→                            <DropdownMenuItem
+   894→                              variant="destructive"
+   895→                              onClick={() => setDeleteTarget(emp)}
+   896→                            >
+   897→                              <Trash2 className="size-4" />
+   898→                              Offboard
+   899→                            </DropdownMenuItem>
+   900→                          </DropdownMenuContent>
+   901→                        </DropdownMenu>
+   902→                      </TableCell>
+   903→                    ) : null}
+   904→                  </TableRow>
+   905→                ))}
+   906→              </TableBody>
+   907→            </Table>
+   908→          </div>
+   909→        </Card>
+   910→      )}
+   911→
+   912→      {/* Add / Edit sheet */}
+   913→      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+   914→        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+   915→          <SheetHeader>
+   916→            <SheetTitle>{editing ? "Edit employee" : "Add employee"}</SheetTitle>
+   917→            <SheetDescription>
+   918→              {editing
+   919→                ? "Update profile and role assignment."
+   920→                : "Create a new employee record."}
+   921→            </SheetDescription>
+   922→          </SheetHeader>
+   923→          <form
+   924→            onSubmit={submitForm}
+   925→            className="flex flex-1 flex-col gap-4 px-4 pb-4"
+   926→          >
+   927→            <div className="grid gap-4">
+   928→              <div className="space-y-1.5">
+   929→                <Label htmlFor="emp-display-name">Display name</Label>
+   930→                <Input
+   931→                  id="emp-display-name"
+   932→                  value={form.displayName}
+   933→                  onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+   934→                  required
+   935→                />
+   936→              </div>
+   937→              <div className="space-y-1.5">
+   938→                <Label htmlFor="emp-email">Email</Label>
+   939→                <Input
+   940→                  id="emp-email"
+   941→                  type="email"
+   942→                  value={form.email}
+   943→                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+   944→                  required
+   945→                  disabled={!!editing}
+   946→                />
+   947→              </div>
+   948→              <div className="grid grid-cols-2 gap-3">
+   949→                <div className="space-y-1.5">
+   950→                  <Label htmlFor="emp-code">Employee code</Label>
+   951→                  <Input
+   952→                    id="emp-code"
+   953→                    value={form.employeeCode}
+   954→                    onChange={(e) => setForm({ ...form, employeeCode: e.target.value })}
+   955→                    required
+   956→                    disabled={!!editing}
+   957→                    className="font-mono"
+   958→                  />
+   959→                </div>
+   960→                <div className="space-y-1.5">
+   961→                  <Label htmlFor="emp-join">Join date</Label>
+   962→                  <Input
+   963→                    id="emp-join"
+   964→                    type="date"
+   965→                    value={form.joinDate}
+   966→                    onChange={(e) => setForm({ ...form, joinDate: e.target.value })}
+   967→                    required
+   968→                  />
+   969→                </div>
+   970→              </div>
+   971→              <div className="grid grid-cols-2 gap-3">
+   972→                <div className="space-y-1.5">
+   973→                  <Label htmlFor="emp-dept">Department</Label>
+   974→                  <Select
+   975→                    value={form.departmentId || undefined}
+   976→                    onValueChange={(v) => setForm({ ...form, departmentId: v })}
+   977→                  >
+   978→                    <SelectTrigger id="emp-dept" className="w-full">
+   979→                      <SelectValue placeholder="Select…" />
+   980→                    </SelectTrigger>
+   981→                    <SelectContent>
+   982→                      {(deptData?.items ?? []).map((d) => (
+   983→                        <SelectItem key={d.id} value={d.id}>
+   984→                          {d.name}
+   985→                        </SelectItem>
+   986→                      ))}
+   987→                    </SelectContent>
+   988→                  </Select>
+   989→                </div>
+   990→                <div className="space-y-1.5">
+   991→                  <Label htmlFor="emp-role">Role</Label>
+   992→                  <Select
+   993→                    value={form.roleId || undefined}
+   994→                    onValueChange={(v) => setForm({ ...form, roleId: v })}
+   995→                  >
+   996→                    <SelectTrigger id="emp-role" className="w-full">
+   997→                      <SelectValue placeholder="Select…" />
+   998→                    </SelectTrigger>
+   999→                    <SelectContent>
+  1000→                      {(roleData?.roles ?? []).map((r) => (
+  1001→                        <SelectItem key={r.id} value={r.id}>
+  1002→                          {r.label}
+  1003→                        </SelectItem>
+  1004→                      ))}
+  1005→                    </SelectContent>
+  1006→                  </Select>
+  1007→                </div>
+  1008→              </div>
+  1009→              <div className="space-y-1.5">
+  1010→                <Label htmlFor="emp-designation">Designation</Label>
+  1011→                <Input
+  1012→                  id="emp-designation"
+  1013→                  value={form.designation}
+  1014→                  onChange={(e) => setForm({ ...form, designation: e.target.value })}
+  1015→                  required
+  1016→                />
+  1017→              </div>
+  1018→              <div className="space-y-1.5">
+  1019→                <Label htmlFor="emp-phone">Phone</Label>
+  1020→                <Input
+  1021→                  id="emp-phone"
+  1022→                  value={form.phone}
+  1023→                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+  1024→                />
+  1025→              </div>
+  1026→              <div className="space-y-1.5">
+  1027→                <Label htmlFor="emp-bio">Bio</Label>
+  1028→                <Textarea
+  1029→                  id="emp-bio"
+  1030→                  value={form.bio}
+  1031→                  onChange={(e) => setForm({ ...form, bio: e.target.value })}
+  1032→                  rows={3}
+  1033→                />
+  1034→              </div>
+  1035→            </div>
+  1036→            <SheetFooter className="mt-auto flex-row gap-2">
+  1037→              <Button
+  1038→                type="button"
+  1039→                variant="outline"
+  1040→                onClick={() => setSheetOpen(false)}
+  1041→                disabled={submitting}
+  1042→              >
+  1043→                Cancel
+  1044→              </Button>
+  1045→              <Button type="submit" disabled={submitting}>
+  1046→                {submitting ? "Saving…" : editing ? "Save changes" : "Add employee"}
+  1047→              </Button>
+  1048→            </SheetFooter>
+  1049→          </form>
+  1050→        </SheetContent>
+  1051→      </Sheet>
+  1052→
+  1053→      {/* Delete confirm */}
+  1054→      <AlertDialog
+  1055→        open={!!deleteTarget}
+  1056→        onOpenChange={(o) => !o && setDeleteTarget(null)}
+  1057→      >
+  1058→        <AlertDialogContent>
+  1059→          <AlertDialogHeader>
+  1060→            <AlertDialogTitle>Offboard employee?</AlertDialogTitle>
+  1061→            <AlertDialogDescription>
+  1062→              This will mark <span className="font-medium">{deleteTarget?.name}</span> ({deleteTarget?.employeeCode})
+  1063→              as offboarded. The record is retained for audit purposes.
+  1064→            </AlertDialogDescription>
+  1065→          </AlertDialogHeader>
+  1066→          <AlertDialogFooter>
+  1067→            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+  1068→            <AlertDialogAction
+  1069→              onClick={confirmDelete}
+  1070→              disabled={deleting}
+  1071→              className="bg-destructive text-white hover:bg-destructive/90"
+  1072→            >
+  1073→              {deleting ? "Offboarding…" : "Offboard"}
+  1074→            </AlertDialogAction>
+  1075→          </AlertDialogFooter>
+  1076→        </AlertDialogContent>
+  1077→      </AlertDialog>
+  1078→    </div>
+  1079→  );
+  1080→}
+  1081→
+  1082→// ---------------------------------------------------------------------------
+  1083→// 3. Attendance
+  1084→// ---------------------------------------------------------------------------
+  1085→
+  1086→function AttendanceSection() {
+  1087→  const { data, loading, error, refetch } = useFetch<{
+  1088→    canOverride: boolean;
+  1089→    items: AttendanceItem[];
+  1090→  }>("/api/attendance?days=14");
+  1091→
+  1092→  const [statusFilter, setStatusFilter] = React.useState<string>("");
+  1093→  const [overrideTarget, setOverrideTarget] = React.useState<AttendanceItem | null>(null);
+  1094→  const [overrideStatus, setOverrideStatus] = React.useState<string>("present");
+  1095→  const [overrideNote, setOverrideNote] = React.useState("");
+  1096→  const [submitting, setSubmitting] = React.useState(false);
+  1097→
+  1098→  const items = (data?.items ?? []).filter((a) =>
+  1099→    statusFilter ? a.status === statusFilter : true
+  1100→  );
+  1101→
+  1102→  async function submitOverride() {
+  1103→    if (!overrideTarget) return;
+  1104→    setSubmitting(true);
+  1105→    try {
+  1106→      const r = await fetch("/api/attendance", {
+  1107→        method: "POST",
+  1108→        headers: { "Content-Type": "application/json" },
+  1109→        body: JSON.stringify({
+  1110→          action: "override",
+  1111→          employeeId: overrideTarget.employeeId,
+  1112→          status: overrideStatus,
+  1113→          note: overrideNote || undefined,
+  1114→        }),
+  1115→      });
+  1116→      if (!r.ok) {
+  1117→        const j = (await r.json().catch(() => ({}))) as { error?: string };
+  1118→        throw new Error(j.error ?? `HTTP ${r.status}`);
+  1119→      }
+  1120→      toast.success("Attendance overridden");
+  1121→      setOverrideTarget(null);
+  1122→      setOverrideNote("");
+  1123→      void refetch();
+  1124→    } catch (e) {
+  1125→      toast.error(`Failed: ${(e as Error).message}`);
+  1126→    } finally {
+  1127→      setSubmitting(false);
+  1128→    }
+  1129→  }
+  1130→
+  1131→  return (
+  1132→    <div className="space-y-6">
+  1133→      <SectionHeader title="Attendance" description="Last 14 days across the org" />
+  1134→
+  1135→      <div className="flex items-center gap-2">
+  1136→        <Select
+  1137→          value={statusFilter || ALL_SENTINEL}
+  1138→          onValueChange={(v) => setStatusFilter(v === ALL_SENTINEL ? "" : v)}
+  1139→        >
+  1140→          <SelectTrigger className="w-44">
+  1141→            <SelectValue placeholder="All statuses" />
+  1142→          </SelectTrigger>
+  1143→          <SelectContent>
+  1144→            <SelectItem value={ALL_SENTINEL}>All statuses</SelectItem>
+  1145→            {ATTENDANCE_STATUSES.map((s) => (
+  1146→              <SelectItem key={s} value={s}>
+  1147→                {s === "on_leave" ? "On Leave" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+  1148→              </SelectItem>
+  1149→            ))}
+  1150→          </SelectContent>
+  1151→        </Select>
+  1152→      </div>
+  1153→
+  1154→      {loading && !data ? (
+  1155→        <SectionSkeleton rows={6} cols={6} />
+  1156→      ) : error ? (
+  1157→        <ErrorState message={error.message} />
+  1158→      ) : items.length === 0 ? (
+  1159→        <EmptyState icon={<CalendarCheck />} title="No attendance records" />
+  1160→      ) : (
+  1161→        <Card className="gap-0 px-0 py-0">
+  1162→          <div className="max-h-[70vh] overflow-y-auto">
+  1163→            <Table>
+  1164→              <TableHeader className="sticky top-0 z-10 bg-card">
+  1165→                <TableRow>
+  1166→                  <TableHead>Employee</TableHead>
+  1167→                  <TableHead>Department</TableHead>
+  1168→                  <TableHead>Date</TableHead>
+  1169→                  <TableHead>Status</TableHead>
+  1170→                  <TableHead>Check-in</TableHead>
+  1171→                  <TableHead>Check-out</TableHead>
+  1172→                  <TableHead>Note</TableHead>
+  1173→                  {data?.canOverride ? <TableHead className="text-right">Action</TableHead> : null}
+  1174→                </TableRow>
+  1175→              </TableHeader>
+  1176→              <TableBody>
+  1177→                {items.map((a) => (
+  1178→                  <TableRow key={a.id}>
+  1179→                    <TableCell>
+  1180→                      <div className="font-medium">{a.employee}</div>
+  1181→                      <div className="font-mono text-xs text-muted-foreground">{a.code}</div>
+  1182→                    </TableCell>
+  1183→                    <TableCell>{a.department}</TableCell>
+  1184→                    <TableCell>{formatDate(a.date)}</TableCell>
+  1185→                    <TableCell>
+  1186→                      <StatusBadge status={a.status} />
+  1187→                    </TableCell>
+  1188→                    <TableCell className="text-muted-foreground">
+  1189→                      {a.checkIn ? formatDateTime(a.checkIn) : "—"}
+  1190→                    </TableCell>
+  1191→                    <TableCell className="text-muted-foreground">
+  1192→                      {a.checkOut ? formatDateTime(a.checkOut) : "—"}
+  1193→                    </TableCell>
+  1194→                    <TableCell className="max-w-[16rem] truncate text-muted-foreground">
+  1195→                      {a.note ?? "—"}
+  1196→                    </TableCell>
+  1197→                    {data?.canOverride ? (
+  1198→                      <TableCell className="text-right">
+  1199→                        <Button
+  1200→                          variant="outline"
+  1201→                          size="sm"
+  1202→                          onClick={() => {
+  1203→                            setOverrideTarget(a);
+  1204→                            setOverrideStatus(a.status);
+  1205→                            setOverrideNote(a.note ?? "");
+  1206→                          }}
+  1207→                        >
+  1208→                          Override
+  1209→                        </Button>
+  1210→                      </TableCell>
+  1211→                    ) : null}
+  1212→                  </TableRow>
+  1213→                ))}
+  1214→              </TableBody>
+  1215→            </Table>
+  1216→          </div>
+  1217→        </Card>
+  1218→      )}
+  1219→
+  1220→      <Dialog
+  1221→        open={!!overrideTarget}
+  1222→        onOpenChange={(o) => !o && setOverrideTarget(null)}
+  1223→      >
+  1224→        <DialogContent>
+  1225→          <DialogHeader>
+  1226→            <DialogTitle>Override attendance</DialogTitle>
+  1227→            <DialogDescription>
+  1228→              {overrideTarget?.employee} · {overrideTarget ? formatDate(overrideTarget.date) : ""}
+  1229→            </DialogDescription>
+  1230→          </DialogHeader>
+  1231→          <div className="space-y-4">
+  1232→            <div className="space-y-1.5">
+  1233→              <Label htmlFor="att-status">Status</Label>
+  1234→              <Select
+  1235→                value={overrideStatus}
+  1236→                onValueChange={(v) => setOverrideStatus(v)}
+  1237→              >
+  1238→                <SelectTrigger id="att-status" className="w-full">
+  1239→                  <SelectValue />
+  1240→                </SelectTrigger>
+  1241→                <SelectContent>
+  1242→                  {["present", "absent", "half_day", "on_leave"].map((s) => (
+  1243→                    <SelectItem key={s} value={s}>
+  1244→                      {s === "on_leave" ? "On Leave" : s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+  1245→                    </SelectItem>
+  1246→                  ))}
+  1247→                </SelectContent>
+  1248→              </Select>
+  1249→            </div>
+  1250→            <div className="space-y-1.5">
+  1251→              <Label htmlFor="att-note">Note</Label>
+  1252→              <Input
+  1253→                id="att-note"
+  1254→                value={overrideNote}
+  1255→                onChange={(e) => setOverrideNote(e.target.value)}
+  1256→                placeholder="Reason for override…"
+  1257→              />
+  1258→            </div>
+  1259→          </div>
+  1260→          <DialogFooter>
+  1261→            <Button
+  1262→              variant="outline"
+  1263→              onClick={() => setOverrideTarget(null)}
+  1264→              disabled={submitting}
+  1265→            >
+  1266→              Cancel
+  1267→            </Button>
+  1268→            <Button onClick={submitOverride} disabled={submitting}>
+  1269→              {submitting ? "Saving…" : "Save override"}
+  1270→            </Button>
+  1271→          </DialogFooter>
+  1272→        </DialogContent>
+  1273→      </Dialog>
+  1274→    </div>
+  1275→  );
+  1276→}
+  1277→
+  1278→// ---------------------------------------------------------------------------
+  1279→// 4. Leave
+  1280→// ---------------------------------------------------------------------------
+  1281→
+  1282→function LeaveSection() {
+  1283→  const { data, loading, error, refetch } = useFetch<{
+  1284→    canApprove: boolean;
+  1285→    items: LeaveItem[];
+  1286→  }>("/api/leave");
+  1287→
+  1288→  const [deciding, setDeciding] = React.useState<string | null>(null);
+  1289→
+  1290→  async function decide(id: string, decision: "approved" | "rejected") {
+  1291→    setDeciding(id);
+  1292→    try {
+  1293→      const r = await fetch(`/api/leave/${id}`, {
+  1294→        method: "PATCH",
+  1295→        headers: { "Content-Type": "application/json" },
+  1296→        body: JSON.stringify({ decision }),
+  1297→      });
+  1298→      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  1299→      toast.success(`Leave ${decision}`);
+  1300→      void refetch();
+  1301→    } catch (e) {
+  1302→      toast.error(`Failed: ${(e as Error).message}`);
+  1303→    } finally {
+  1304→      setDeciding(null);
+  1305→    }
+  1306→  }
+  1307→
+  1308→  if (loading && !data) return <SectionSkeleton rows={5} cols={5} />;
+  1309→  if (error || !data) return <ErrorState message={error?.message ?? "No data"} />;
+  1310→
+  1311→  const pending = data.items.filter((l) => l.status === "pending");
+  1312→
+  1313→  return (
+  1314→    <div className="space-y-6">
+  1315→      <SectionHeader
+  1316→        title="Leave Requests"
+  1317→        description="Approve or reject pending requests"
+  1318→      />
+  1319→
+  1320→      <Tabs defaultValue="pending">
+  1321→        <TabsList>
+  1322→          <TabsTrigger value="pending">
+  1323→            Pending
+  1324→            <Badge variant="secondary" className="ml-1">
+  1325→              {pending.length}
+  1326→            </Badge>
+  1327→          </TabsTrigger>
+  1328→          <TabsTrigger value="all">All</TabsTrigger>
+  1329→        </TabsList>
+  1330→
+  1331→        <TabsContent value="pending" className="space-y-4">
+  1332→          {pending.length === 0 ? (
+  1333→            <EmptyState icon={<Plane />} title="No pending requests" />
+  1334→          ) : (
+  1335→            <div className="grid gap-4">
+  1336→              {pending.map((l) => (
+  1337→                <Card key={l.id} className="px-6 py-5">
+  1338→                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+  1339→                    <div className="space-y-1">
+  1340→                      <div className="flex flex-wrap items-center gap-2">
+  1341→                        <span className="font-medium">{l.employee}</span>
+  1342→                        <Badge variant="outline" className="font-mono text-[10px]">
+  1343→                          {l.code}
+  1344→                        </Badge>
+  1345→                        <Badge variant="secondary" className="text-[10px]">
+  1346→                          {l.department}
+  1347→                        </Badge>
+  1348→                        <Badge variant="secondary" className="text-[10px]">
+  1349→                          {l.leaveType}
+  1350→                        </Badge>
+  1351→                      </div>
+  1352→                      <p className="text-sm text-muted-foreground">
+  1353→                        {formatDate(l.startDate)} → {formatDate(l.endDate)} · {l.days} day{l.days > 1 ? "s" : ""}
+  1354→                      </p>
+  1355→                      {l.reason ? (
+  1356→                        <p className="text-sm text-muted-foreground">
+  1357→                          <span className="font-medium text-foreground">Reason:</span> {l.reason}
+  1358→                        </p>
+  1359→                      ) : null}
+  1360→                      {l.attachmentPath ? (
+  1361→                        <a
+  1362→                          href={l.attachmentPath}
+  1363→                          target="_blank"
+  1364→                          rel="noreferrer"
+  1365→                          className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+  1366→                        >
+  1367→                          <Paperclip className="size-3.5" />
+  1368→                          View attachment
+  1369→                        </a>
+  1370→                      ) : null}
+  1371→                    </div>
+  1372→                    {data.canApprove ? (
+  1373→                      <div className="flex gap-2">
+  1374→                        <Button
+  1375→                          size="sm"
+  1376→                          onClick={() => decide(l.id, "approved")}
+  1377→                          disabled={deciding === l.id}
+  1378→                        >
+  1379→                          <Check className="size-4" />
+  1380→                          Approve
+  1381→                        </Button>
+  1382→                        <Button
+  1383→                          size="sm"
+  1384→                          variant="outline"
+  1385→                          onClick={() => decide(l.id, "rejected")}
+  1386→                          disabled={deciding === l.id}
+  1387→                        >
+  1388→                          Reject
+  1389→                        </Button>
+  1390→                      </div>
+  1391→                    ) : null}
+  1392→                  </div>
+  1393→                </Card>
+  1394→              ))}
+  1395→            </div>
+  1396→          )}
+  1397→        </TabsContent>
+  1398→
+  1399→        <TabsContent value="all">
+  1400→          {data.items.length === 0 ? (
+  1401→            <EmptyState icon={<Plane />} title="No leave requests" />
+  1402→          ) : (
+  1403→            <Card className="gap-0 px-0 py-0">
+  1404→              <div className="max-h-[70vh] overflow-y-auto">
+  1405→                <Table>
+  1406→                  <TableHeader className="sticky top-0 z-10 bg-card">
+  1407→                    <TableRow>
+  1408→                      <TableHead>Employee</TableHead>
+  1409→                      <TableHead>Type</TableHead>
+  1410→                      <TableHead>Dates</TableHead>
+  1411→                      <TableHead>Days</TableHead>
+  1412→                      <TableHead>Status</TableHead>
+  1413→                      <TableHead>Approver</TableHead>
+  1414→                      <TableHead>Decided</TableHead>
+  1415→                      <TableHead>Attachment</TableHead>
+  1416→                    </TableRow>
+  1417→                  </TableHeader>
+  1418→                  <TableBody>
+  1419→                    {data.items.map((l) => (
+  1420→                      <TableRow key={l.id}>
+  1421→                        <TableCell>
+  1422→                          <div className="font-medium">{l.employee}</div>
+  1423→                          <div className="font-mono text-xs text-muted-foreground">{l.code}</div>
+  1424→                        </TableCell>
+  1425→                        <TableCell>
+  1426→                          <Badge variant="secondary" className="text-[10px]">
+  1427→                            {l.leaveType}
+  1428→                          </Badge>
+  1429→                        </TableCell>
+  1430→                        <TableCell className="text-muted-foreground">
+  1431→                          {formatDate(l.startDate)} → {formatDate(l.endDate)}
+  1432→                        </TableCell>
+  1433→                        <TableCell>{l.days}</TableCell>
+  1434→                        <TableCell>
+  1435→                          <StatusBadge status={l.status} />
+  1436→                        </TableCell>
+  1437→                        <TableCell className="text-muted-foreground">
+  1438→                          {l.approver ?? "—"}
+  1439→                        </TableCell>
+  1440→                        <TableCell className="text-muted-foreground">
+  1441→                          {l.decidedAt ? formatDateTime(l.decidedAt) : "—"}
+  1442→                        </TableCell>
+  1443→                        <TableCell>
+  1444→                          {l.attachmentPath ? (
+  1445→                            <a
+  1446→                              href={l.attachmentPath}
+  1447→                              target="_blank"
+  1448→                              rel="noreferrer"
+  1449→                              className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+  1450→                            >
+  1451→                              <Paperclip className="size-3.5" />
+  1452→                              View
+  1453→                            </a>
+  1454→                          ) : (
+  1455→                            <span className="text-muted-foreground">—</span>
+  1456→                          )}
+  1457→                        </TableCell>
+  1458→                      </TableRow>
+  1459→                    ))}
+  1460→                  </TableBody>
+  1461→                </Table>
+  1462→              </div>
+  1463→            </Card>
+  1464→          )}
+  1465→        </TabsContent>
+  1466→      </Tabs>
+  1467→    </div>
+  1468→  );
+  1469→}
+  1470→
+  1471→// ---------------------------------------------------------------------------
+  1472→// 5. Reports
+  1473→// ---------------------------------------------------------------------------
+  1474→
+  1475→function ReportsSection() {
+  1476→  const { data: teacherData, loading: teacherLoading } = useFetch<{
+  1477→    items: TeacherReportItem[];
+  1478→  }>("/api/teacher-reports");
+  1479→  const { data: marketingData, loading: marketingLoading } = useFetch<{
+  1480→    items: MarketingReportItem[];
+  1481→  }>("/api/marketing-reports");
+  1482→
+  1483→  const [tab, setTab] = React.useState<"all" | "teacher" | "marketing">("all");
+  1484→  const [selected, setSelected] = React.useState<UnifiedReport | null>(null);
+  1485→
+  1486→  const loading = (teacherLoading && !teacherData) || (marketingLoading && !marketingData);
+  1487→
+  1488→  const unified: UnifiedReport[] = React.useMemo(() => {
+  1489→    const teacher: UnifiedReport[] = (teacherData?.items ?? []).map((t) => ({
+  1490→      id: `t-${t.id}`,
+  1491→      type: "teacher" as const,
+  1492→      employee: t.employee,
+  1493→      code: t.code,
+  1494→      department: t.department,
+  1495→      reportDate: t.reportDate,
+  1496→      submittedAt: t.submittedAt,
+  1497→      notes: t.notes,
+  1498→      classes: t.classes,
+  1499→      calls: [],
+  1500→      meetings: [],
+  1501→    }));
+  1502→    const marketing: UnifiedReport[] = (marketingData?.items ?? []).map((m) => ({
+  1503→      id: `m-${m.id}`,
+  1504→      type: "marketing" as const,
+  1505→      employee: m.employee,
+  1506→      code: m.code,
+  1507→      department: m.department,
+  1508→      reportDate: m.reportDate,
+  1509→      submittedAt: m.submittedAt,
+  1510→      notes: m.notes,
+  1511→      classes: [],
+  1512→      calls: m.calls,
+  1513→      meetings: m.meetings,
+  1514→    }));
+  1515→    return [...teacher, ...marketing].sort(
+  1516→      (a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime()
+  1517→    );
+  1518→  }, [teacherData, marketingData]);
+  1519→
+  1520→  const filtered = unified.filter((r) => (tab === "all" ? true : r.type === tab));
+  1521→
+  1522→  function summary(r: UnifiedReport): string {
+  1523→    if (r.type === "teacher") {
+  1524→      const students = r.classes.reduce((s, c) => s + c.studentsAttended, 0);
+  1525→      return `${r.classes.length} classes · ${students} students`;
+  1526→    }
+  1527→    return `${r.calls.length} calls · ${r.meetings.length} meetings`;
+  1528→  }
+  1529→
+  1530→  return (
+  1531→    <div className="space-y-6">
+  1532→      <SectionHeader title="Daily Reports" description="Cross-department submissions" />
+  1533→
+  1534→      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+  1535→        <TabsList>
+  1536→          <TabsTrigger value="all">All</TabsTrigger>
+  1537→          <TabsTrigger value="teacher">Teacher</TabsTrigger>
+  1538→          <TabsTrigger value="marketing">Marketing</TabsTrigger>
+  1539→        </TabsList>
+  1540→
+  1541→        <TabsContent value={tab}>
+  1542→          {loading ? (
+  1543→            <SectionSkeleton rows={6} cols={5} />
+  1544→          ) : filtered.length === 0 ? (
+  1545→            <EmptyState icon={<FileText />} title="No reports" />
+  1546→          ) : (
+  1547→            <Card className="gap-0 px-0 py-0">
+  1548→              <div className="max-h-[70vh] overflow-y-auto">
+  1549→                <Table>
+  1550→                  <TableHeader className="sticky top-0 z-10 bg-card">
+  1551→                    <TableRow>
+  1552→                      <TableHead>Date</TableHead>
+  1553→                      <TableHead>Type</TableHead>
+  1554→                      <TableHead>Employee</TableHead>
+  1555→                      <TableHead>Summary</TableHead>
+  1556→                      <TableHead>Notes</TableHead>
+  1557→                    </TableRow>
+  1558→                  </TableHeader>
+  1559→                  <TableBody>
+  1560→                    {filtered.map((r) => (
+  1561→                      <TableRow
+  1562→                        key={r.id}
+  1563→                        className="cursor-pointer"
+  1564→                        onClick={() => setSelected(r)}
+  1565→                      >
+  1566→                        <TableCell className="whitespace-nowrap">
+  1567→                          {formatDate(r.reportDate)}
+  1568→                        </TableCell>
+  1569→                        <TableCell>
+  1570→                          {r.type === "teacher" ? (
+  1571→                            <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+  1572→                              Teacher
+  1573→                            </Badge>
+  1574→                          ) : (
+  1575→                            <Badge className="bg-violet-500/10 text-violet-600 dark:text-violet-400">
+  1576→                              Marketing
+  1577→                            </Badge>
+  1578→                          )}
+  1579→                        </TableCell>
+  1580→                        <TableCell>
+  1581→                          <div className="font-medium">{r.employee}</div>
+  1582→                          <div className="font-mono text-xs text-muted-foreground">{r.code}</div>
+  1583→                        </TableCell>
+  1584→                        <TableCell className="text-muted-foreground">{summary(r)}</TableCell>
+  1585→                        <TableCell className="max-w-[20rem] truncate text-muted-foreground">
+  1586→                          {r.notes ?? "—"}
+  1587→                        </TableCell>
+  1588→                      </TableRow>
+  1589→                    ))}
+  1590→                  </TableBody>
+  1591→                </Table>
+  1592→              </div>
+  1593→            </Card>
+  1594→          )}
+  1595→        </TabsContent>
+  1596→      </Tabs>
+  1597→
+  1598→      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+  1599→        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
+  1600→          <SheetHeader>
+  1601→            <SheetTitle>
+  1602→              {selected?.type === "teacher" ? "Teacher report" : "Marketing report"}
+  1603→            </SheetTitle>
+  1604→            <SheetDescription>
+  1605→              {selected ? `${selected.employee} · ${formatDate(selected.reportDate)}` : ""}
+  1606→            </SheetDescription>
+  1607→          </SheetHeader>
+  1608→          {selected ? (
+  1609→            <div className="flex flex-1 flex-col gap-4 px-4 pb-4">
+  1610→              {selected.notes ? (
+  1611→                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+  1612→                  <span className="font-medium">Notes:</span> {selected.notes}
+  1613→                </div>
+  1614→              ) : null}
+  1615→
+  1616→              {selected.type === "teacher" ? (
+  1617→                <div className="space-y-3">
+  1618→                  <h4 className="text-sm font-semibold">Classes ({selected.classes.length})</h4>
+  1619→                  {selected.classes.length === 0 ? (
+  1620→                    <p className="text-sm text-muted-foreground">No classes recorded.</p>
+  1621→                  ) : (
+  1622→                    selected.classes.map((c) => (
+  1623→                      <Card key={c.id} className="gap-1 px-4 py-3">
+  1624→                        <div className="flex items-center justify-between">
+  1625→                          <span className="font-medium">
+  1626→                            {c.batch} · {c.subject}
+  1627→                          </span>
+  1628→                          <Badge variant="secondary" className="text-[10px]">
+  1629→                            {c.studentsAttended} students
+  1630→                          </Badge>
+  1631→                        </div>
+  1632→                        <p className="text-sm text-muted-foreground">{c.topicsCovered}</p>
+  1633→                        <p className="text-xs text-muted-foreground">
+  1634→                          Assignments: {c.assignmentsChecked ? "Checked" : "Not checked"}
+  1635→                        </p>
+  1636→                      </Card>
+  1637→                    ))
+  1638→                  )}
+  1639→                </div>
+  1640→              ) : (
+  1641→                <div className="space-y-4">
+  1642→                  <div className="space-y-3">
+  1643→                    <h4 className="text-sm font-semibold">Calls ({selected.calls.length})</h4>
+  1644→                    {selected.calls.length === 0 ? (
+  1645→                      <p className="text-sm text-muted-foreground">No calls recorded.</p>
+  1646→                    ) : (
+  1647→                      selected.calls.map((c) => (
+  1648→                        <Card key={c.id} className="gap-1 px-4 py-3">
+  1649→                          <div className="flex items-center justify-between">
+  1650→                            <span className="font-medium">{c.contactName}</span>
+  1651→                            <Badge variant="secondary" className="text-[10px]">
+  1652→                              {c.outcome}
+  1653→                            </Badge>
+  1654→                          </div>
+  1655→                          {c.contactPhone ? (
+  1656→                            <p className="font-mono text-xs text-muted-foreground">{c.contactPhone}</p>
+  1657→                          ) : null}
+  1658→                          {c.notes ? (
+  1659→                            <p className="text-sm text-muted-foreground">{c.notes}</p>
+  1660→                          ) : null}
+  1661→                        </Card>
+  1662→                      ))
+  1663→                    )}
+  1664→                  </div>
+  1665→                  <div className="space-y-3">
+  1666→                    <h4 className="text-sm font-semibold">Meetings ({selected.meetings.length})</h4>
+  1667→                    {selected.meetings.length === 0 ? (
+  1668→                      <p className="text-sm text-muted-foreground">No meetings recorded.</p>
+  1669→                    ) : (
+  1670→                      selected.meetings.map((m) => (
+  1671→                        <Card key={m.id} className="gap-1 px-4 py-3">
+  1672→                          <div className="flex items-center justify-between">
+  1673→                            <span className="font-medium">{m.counterparty}</span>
+  1674→                            <Badge variant="secondary" className="text-[10px]">
+  1675→                              {m.durationMinutes} min
+  1676→                            </Badge>
+  1677→                          </div>
+  1678→                          <p className="text-sm text-muted-foreground">{m.purpose}</p>
+  1679→                          {m.outcome ? (
+  1680→                            <p className="text-xs text-muted-foreground">Outcome: {m.outcome}</p>
+  1681→                          ) : null}
+  1682→                        </Card>
+  1683→                      ))
+  1684→                    )}
+  1685→                  </div>
+  1686→                </div>
+  1687→              )}
+  1688→            </div>
+  1689→          ) : null}
+  1690→        </SheetContent>
+  1691→      </Sheet>
+  1692→    </div>
+  1693→  );
+  1694→}
+  1695→
+  1696→// ---------------------------------------------------------------------------
+  1697→// 6. Analytics
+  1698→// ---------------------------------------------------------------------------
+  1699→
+  1700→function AnalyticsSection() {
+  1701→  const { data, loading, error } = useFetch<AnalyticsData>("/api/analytics");
+  1702→
+  1703→  if (loading && !data) {
+  1704→    return (
+  1705→      <div className="space-y-6">
+  1706→        <Skeleton className="h-9 w-48" />
+  1707→        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1708→          {Array.from({ length: 4 }).map((_, i) => (
+  1709→            <Skeleton key={i} className="h-80 w-full" />
+  1710→          ))}
+  1711→        </div>
+  1712→      </div>
+  1713→    );
+  1714→  }
+  1715→
+  1716→  if (error || !data) {
+  1717→    return <ErrorState message={error?.message ?? "No data"} />;
+  1718→  }
+  1719→
+  1720→  const funnelData = [
+  1721→    { name: "New", count: data.marketingFunnel.byStatus.new },
+  1722→    { name: "Contacted", count: data.marketingFunnel.byStatus.contacted },
+  1723→    { name: "Qualified", count: data.marketingFunnel.byStatus.qualified },
+  1724→    { name: "Lost", count: data.marketingFunnel.byStatus.lost },
+  1725→    { name: "Converted", count: data.marketingFunnel.byStatus.converted },
+  1726→  ];
+  1727→
+  1728→  const leavePieData = [
+  1729→    { name: "Casual", value: data.leaveStats.byType.casual, fill: COLORS[0] },
+  1730→    { name: "Sick", value: data.leaveStats.byType.sick, fill: COLORS[3] },
+  1731→    { name: "Earned", value: data.leaveStats.byType.earned, fill: COLORS[1] },
+  1732→    { name: "Unpaid", value: data.leaveStats.byType.unpaid, fill: COLORS[2] },
+  1733→  ].filter((d) => d.value > 0);
+  1734→
+  1735→  return (
+  1736→    <div className="space-y-6">
+  1737→      <SectionHeader title="Analytics" description="Trends and performance across the org" />
+  1738→
+  1739→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1740→        <ChartCard
+  1741→          title="Attendance Trend"
+  1742→          description="Last 14 days, by status"
+  1743→        >
+  1744→          <ResponsiveContainer width="100%" height={260}>
+  1745→            <BarChart data={data.attendanceTrend} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+  1746→              <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 90%)" />
+  1747→              <XAxis
+  1748→                dataKey="date"
+  1749→                tickFormatter={shortDate}
+  1750→                tick={{ fontSize: 11, fill: "currentColor" }}
+  1751→              />
+  1752→              <YAxis tick={{ fontSize: 11, fill: "currentColor" }} allowDecimals={false} />
+  1753→              <Tooltip />
+  1754→              <Legend wrapperStyle={{ fontSize: 12 }} />
+  1755→              <Bar dataKey="present" stackId="a" name="Present" fill={COLORS[0]} />
+  1756→              <Bar dataKey="absent" stackId="a" name="Absent" fill={COLORS[3]} />
+  1757→              <Bar dataKey="onLeave" stackId="a" name="On Leave" fill={COLORS[1]} />
+  1758→              <Bar dataKey="halfDay" stackId="a" name="Half Day" fill={COLORS[2]} />
+  1759→            </BarChart>
+  1760→          </ResponsiveContainer>
+  1761→        </ChartCard>
+  1762→
+  1763→        <ChartCard title="Reports Trend" description="Last 14 days, by type">
+  1764→          <ResponsiveContainer width="100%" height={260}>
+  1765→            <LineChart data={data.reportTrend} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+  1766→              <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 90%)" />
+  1767→              <XAxis
+  1768→                dataKey="date"
+  1769→                tickFormatter={shortDate}
+  1770→                tick={{ fontSize: 11, fill: "currentColor" }}
+  1771→              />
+  1772→              <YAxis tick={{ fontSize: 11, fill: "currentColor" }} allowDecimals={false} />
+  1773→              <Tooltip />
+  1774→              <Legend wrapperStyle={{ fontSize: 12 }} />
+  1775→              <Line
+  1776→                type="monotone"
+  1777→                dataKey="teacherReports"
+  1778→                name="Teacher"
+  1779→                stroke={COLORS[0]}
+  1780→                strokeWidth={2}
+  1781→                dot={{ r: 3 }}
+  1782→              />
+  1783→              <Line
+  1784→                type="monotone"
+  1785→                dataKey="marketingReports"
+  1786→                name="Marketing"
+  1787→                stroke={COLORS[4]}
+  1788→                strokeWidth={2}
+  1789→                dot={{ r: 3 }}
+  1790→              />
+  1791→            </LineChart>
+  1792→          </ResponsiveContainer>
+  1793→        </ChartCard>
+  1794→
+  1795→        <ChartCard title="Marketing Funnel" description="Leads by status">
+  1796→          <ResponsiveContainer width="100%" height={260}>
+  1797→            <BarChart data={funnelData} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
+  1798→              <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 90%)" />
+  1799→              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "currentColor" }} />
+  1800→              <YAxis tick={{ fontSize: 11, fill: "currentColor" }} allowDecimals={false} />
+  1801→              <Tooltip />
+  1802→              <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+  1803→                {funnelData.map((_, i) => (
+  1804→                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+  1805→                ))}
+  1806→              </Bar>
+  1807→            </BarChart>
+  1808→          </ResponsiveContainer>
+  1809→        </ChartCard>
+  1810→
+  1811→        <ChartCard title="Department Headcount" description="Active employees per dept">
+  1812→          <ResponsiveContainer width="100%" height={260}>
+  1813→            <BarChart
+  1814→              data={data.departmentHeadcount}
+  1815→              layout="vertical"
+  1816→              margin={{ top: 8, right: 16, bottom: 0, left: 8 }}
+  1817→            >
+  1818→              <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 90%)" />
+  1819→              <XAxis type="number" tick={{ fontSize: 11, fill: "currentColor" }} allowDecimals={false} />
+  1820→              <YAxis
+  1821→                type="category"
+  1822→                dataKey="department"
+  1823→                width={110}
+  1824→                tick={{ fontSize: 11, fill: "currentColor" }}
+  1825→              />
+  1826→              <Tooltip />
+  1827→              <Bar dataKey="count" fill={COLORS[0]} radius={[0, 4, 4, 0]} />
+  1828→            </BarChart>
+  1829→          </ResponsiveContainer>
+  1830→        </ChartCard>
+  1831→      </div>
+  1832→
+  1833→      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  1834→        <ChartCard title="Top Performers" description="Last 14 days, combined">
+  1835→          {data.topPerformers.length === 0 ? (
+  1836→            <p className="py-8 text-center text-sm text-muted-foreground">No activity in window.</p>
+  1837→          ) : (
+  1838→            <ol className="space-y-2">
+  1839→              {data.topPerformers.map((p, i) => (
+  1840→                <li
+  1841→                  key={p.employeeId}
+  1842→                  className="flex items-center gap-3 rounded-md border p-3"
+  1843→                >
+  1844→                  <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+  1845→                    {i + 1}
+  1846→                  </span>
+  1847→                  <div className="min-w-0 flex-1">
+  1848→                    <div className="truncate font-medium">{p.name}</div>
+  1849→                    <div className="text-xs text-muted-foreground">
+  1850→                      {p.role} · {p.metricLabel}
+  1851→                    </div>
+  1852→                  </div>
+  1853→                  <span className="font-mono text-sm tabular-nums">{p.metric}</span>
+  1854→                </li>
+  1855→              ))}
+  1856→            </ol>
+  1857→          )}
+  1858→        </ChartCard>
+  1859→
+  1860→        <ChartCard title="Leave Stats" description="By type & status">
+  1861→          <div className="flex flex-col gap-4 sm:flex-row">
+  1862→            <div className="flex-1">
+  1863→              {leavePieData.length === 0 ? (
+  1864→                <p className="py-8 text-center text-sm text-muted-foreground">No leave recorded.</p>
+  1865→              ) : (
+  1866→                <ResponsiveContainer width="100%" height={220}>
+  1867→                  <PieChart>
+  1868→                    <Pie
+  1869→                      data={leavePieData}
+  1870→                      dataKey="value"
+  1871→                      nameKey="name"
+  1872→                      innerRadius={45}
+  1873→                      outerRadius={75}
+  1874→                      paddingAngle={2}
+  1875→                    >
+  1876→                      {leavePieData.map((entry, i) => (
+  1877→                        <Cell key={i} fill={entry.fill} />
+  1878→                      ))}
+  1879→                    </Pie>
+  1880→                    <Tooltip />
+  1881→                    <Legend wrapperStyle={{ fontSize: 12 }} />
+  1882→                  </PieChart>
+  1883→                </ResponsiveContainer>
+  1884→              )}
+  1885→            </div>
+  1886→            <div className="grid grid-cols-3 gap-2 sm:grid-cols-1 sm:gap-3">
+  1887→              <StatBox label="Pending" value={data.leaveStats.pending} tone="amber" />
+  1888→              <StatBox label="Approved" value={data.leaveStats.approved} tone="emerald" />
+  1889→              <StatBox label="Rejected" value={data.leaveStats.rejected} tone="rose" />
+  1890→            </div>
+  1891→          </div>
+  1892→          <div className="mt-4 grid grid-cols-2 gap-2 border-t pt-4 text-xs sm:grid-cols-4">
+  1893→            <Stat label="Revenue Won" value={formatCurrency(data.marketingFunnel.revenueWon)} />
+  1894→            <Stat label="Pipeline" value={formatCurrency(data.marketingFunnel.pipelineValue)} />
+  1895→            <Stat
+  1896→              label="Deals Won"
+  1897→              value={String(data.marketingFunnel.dealsByStage.won)}
+  1898→            />
+  1899→            <Stat
+  1900→              label="Deals Lost"
+  1901→              value={String(data.marketingFunnel.dealsByStage.lost)}
+  1902→            />
+  1903→          </div>
+  1904→        </ChartCard>
+  1905→      </div>
+  1906→    </div>
+  1907→  );
+  1908→}
+  1909→
+  1910→function StatBox({
+  1911→  label,
+  1912→  value,
+  1913→  tone,
+  1914→}: {
+  1915→  label: string;
+  1916→  value: number;
+  1917→  tone: "amber" | "emerald" | "rose";
+  1918→}) {
+  1919→  const toneClass =
+  1920→    tone === "amber"
+  1921→      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+  1922→      : tone === "emerald"
+  1923→        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+  1924→        : "bg-rose-500/10 text-rose-600 dark:text-rose-400";
+  1925→  return (
+  1926→    <div className={cn("flex flex-col items-center justify-center rounded-md p-3 text-center", toneClass)}>
+  1927→      <span className="text-xl font-semibold tabular-nums">{value}</span>
+  1928→      <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
+  1929→    </div>
+  1930→  );
+  1931→}
+  1932→
+  1933→function Stat({ label, value }: { label: string; value: string }) {
+  1934→  return (
+  1935→    <div className="space-y-0.5">
+  1936→      <div className="text-xs text-muted-foreground">{label}</div>
+  1937→      <div className="font-mono text-sm font-medium tabular-nums">{value}</div>
+  1938→    </div>
+  1939→  );
+  1940→}
+  1941→
+  1942→// ---------------------------------------------------------------------------
+  1943→// 7. Audit Log
+  1944→// ---------------------------------------------------------------------------
+  1945→
+  1946→function AuditSection() {
+  1947→  const { data, loading, error } = useFetch<{ items: AuditItem[] }>("/api/audit");
+  1948→  const [search, setSearch] = React.useState("");
+  1949→
+  1950→  const items = (data?.items ?? []).filter((a) => {
+  1951→    if (!search.trim()) return true;
+  1952→    const q = search.toLowerCase();
+  1953→    return (
+  1954→      a.action.toLowerCase().includes(q) ||
+  1955→      a.actor.toLowerCase().includes(q) ||
+  1956→      a.targetTable.toLowerCase().includes(q)
+  1957→    );
+  1958→  });
+  1959→
+  1960→  return (
+  1961→    <div className="space-y-6">
+  1962→      <SectionHeader title="Audit Log" description="Immutable record of sensitive actions" />
+  1963→
+  1964→      <div className="relative max-w-md">
+  1965→        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+  1966→        <Input
+  1967→          value={search}
+  1968→          onChange={(e) => setSearch(e.target.value)}
+  1969→          placeholder="Search action, actor or target…"
+  1970→          className="pl-9"
+  1971→        />
+  1972→      </div>
+  1973→
+  1974→      {loading && !data ? (
+  1975→        <SectionSkeleton rows={8} cols={5} />
+  1976→      ) : error ? (
+  1977→        <ErrorState message={error.message} />
+  1978→      ) : items.length === 0 ? (
+  1979→        <EmptyState icon={<ScrollText />} title="No audit entries" />
+  1980→      ) : (
+  1981→        <Card className="gap-0 px-0 py-0">
+  1982→          <div className="max-h-[70vh] overflow-y-auto">
+  1983→            <Table>
+  1984→              <TableHeader className="sticky top-0 z-10 bg-card">
+  1985→                <TableRow>
+  1986→                  <TableHead>Timestamp</TableHead>
+  1987→                  <TableHead>Actor</TableHead>
+  1988→                  <TableHead>Action</TableHead>
+  1989→                  <TableHead>Target</TableHead>
+  1990→                  <TableHead>After State</TableHead>
+  1991→                  <TableHead>IP</TableHead>
+  1992→                </TableRow>
+  1993→              </TableHeader>
+  1994→              <TableBody>
+  1995→                {items.map((a) => (
+  1996→                  <TableRow key={a.id}>
+  1997→                    <TableCell className="whitespace-nowrap text-muted-foreground">
+  1998→                      {formatDateTime(a.createdAt)}
+  1999→                    </TableCell>
+  2000→                    <TableCell className="font-medium">{a.actor}</TableCell>
+
+[showing lines 1-2000 of 2356; use offset=2001 with limit to continue reading]

@@ -82,6 +82,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { apiFetch, ApiError } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the API response shapes (kept local to this file).
@@ -286,12 +287,10 @@ function useFetch<T>(url: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as T;
+      const j = await apiFetch<T>(url, { headers: { Accept: "application/json" } });
       setData(j);
     } catch (e) {
-      setError(e as Error);
+      setError(e instanceof ApiError ? new Error(`HTTP ${e.status}`) : (e as Error));
     } finally {
       setLoading(false);
     }
@@ -476,17 +475,13 @@ function OverviewSection({
     let cancelled = false;
     async function loadExtra() {
       try {
-        const [a, s] = await Promise.all([
-          fetch("/api/analytics", { headers: { Accept: "application/json" } }),
-          fetch("/api/settings", { headers: { Accept: "application/json" } }),
+        const results = await Promise.allSettled([
+          apiFetch<AnalyticsResponse>("/api/analytics", { headers: { Accept: "application/json" } }),
+          apiFetch<SettingsResponse>("/api/settings", { headers: { Accept: "application/json" } }),
         ]);
-        if (a.ok) {
-          const aj = (await a.json()) as AnalyticsResponse;
-          if (!cancelled) setAnalyticsData(aj);
-        }
-        if (s.ok) {
-          const sj = (await s.json()) as SettingsResponse;
-          if (!cancelled) setSettingsData(sj);
+        if (!cancelled) {
+          if (results[0].status === "fulfilled") setAnalyticsData(results[0].value);
+          if (results[1].status === "fulfilled") setSettingsData(results[1].value);
         }
       } catch {
         // ignore — Overview KPIs still render without these extras
@@ -672,7 +667,7 @@ function DailyReportSection({
 
     setSubmitting(true);
     try {
-      const r = await fetch("/api/marketing-reports", {
+      await apiFetch("/api/marketing-reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -682,16 +677,6 @@ function DailyReportSection({
           meetings: cleanMeetings,
         }),
       });
-      if (r.status === 409) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        toast.error(j?.error ?? "A report already exists for this date");
-        setSubmitting(false);
-        return;
-      }
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success("Daily report submitted");
       // Reset
       setReportDate(today);
@@ -704,9 +689,14 @@ function DailyReportSection({
       ]);
       onSubmitted();
     } catch (e) {
-      toast.error("Failed to submit report", {
-        description: (e as Error).message,
-      });
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error("A report already exists for this date");
+        return;
+      } else if (e instanceof ApiError) {
+        toast.error("Failed to submit report", { description: `HTTP ${e.status}` });
+      } else {
+        toast.error("Failed to submit report", { description: "Network error" });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -990,7 +980,7 @@ function LeadsSection() {
 
   async function changeStatus(id: string, status: string) {
     try {
-      const r = await fetch(`/api/leads/${id}`, {
+      await apiFetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -998,16 +988,14 @@ function LeadsSection() {
           createDeal: status === "converted",
         }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success(`Lead moved to ${status}`);
       void refetch();
     } catch (e) {
-      toast.error("Failed to update lead", {
-        description: (e as Error).message,
-      });
+      if (e instanceof ApiError) {
+        toast.error("Failed to update lead", { description: `HTTP ${e.status}` });
+      } else {
+        toast.error("Failed to update lead", { description: "Network error" });
+      }
     }
   }
 
@@ -1119,7 +1107,7 @@ function AddLeadDialog({
     }
     onSaving(true);
     try {
-      const r = await fetch("/api/leads", {
+      await apiFetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1131,18 +1119,16 @@ function AddLeadDialog({
           estimatedValue: estimatedValue ? Number(estimatedValue) : undefined,
         }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success("Lead created");
       reset();
       onOpenChange(false);
       onCreated();
     } catch (e) {
-      toast.error("Failed to create lead", {
-        description: (e as Error).message,
-      });
+      if (e instanceof ApiError) {
+        toast.error("Failed to create lead", { description: `HTTP ${e.status}` });
+      } else {
+        toast.error("Failed to create lead", { description: "Network error" });
+      }
     } finally {
       onSaving(false);
     }
@@ -1318,21 +1304,19 @@ function DealsSection() {
 
   async function changeStage(id: string, stage: string) {
     try {
-      const r = await fetch(`/api/deals/${id}`, {
+      await apiFetch(`/api/deals/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stage }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success(`Deal moved to ${stage}`);
       void refetch();
     } catch (e) {
-      toast.error("Failed to update deal", {
-        description: (e as Error).message,
-      });
+      if (e instanceof ApiError) {
+        toast.error("Failed to update deal", { description: `HTTP ${e.status}` });
+      } else {
+        toast.error("Failed to update deal", { description: "Network error" });
+      }
     }
   }
 
@@ -1449,21 +1433,19 @@ function FollowupsSection() {
 
   async function toggle(id: string, done: boolean) {
     try {
-      const r = await fetch(`/api/followups/${id}`, {
+      await apiFetch(`/api/followups/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ done }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success(done ? "Marked done" : "Reopened");
       void refetch();
     } catch (e) {
-      toast.error("Failed to update follow-up", {
-        description: (e as Error).message,
-      });
+      if (e instanceof ApiError) {
+        toast.error("Failed to update follow-up", { description: `HTTP ${e.status}` });
+      } else {
+        toast.error("Failed to update follow-up", { description: "Network error" });
+      }
     }
   }
 
@@ -1639,7 +1621,7 @@ function LeaveSection() {
     }
     setSubmitting(true);
     try {
-      const r = await fetch("/api/leave", {
+      await apiFetch("/api/leave", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1650,10 +1632,6 @@ function LeaveSection() {
           attachmentPath,
         }),
       });
-      if (!r.ok) {
-        const j = (await r.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(j?.error ?? `HTTP ${r.status}`);
-      }
       toast.success("Leave request submitted");
       setReason("");
       setLeaveType("casual");
@@ -1662,7 +1640,11 @@ function LeaveSection() {
       setAttachmentPath(null);
       void leaveFetch.refetch();
     } catch (e2) {
-      toast.error((e2 as Error).message);
+      if (e2 instanceof ApiError) {
+        toast.error(`Failed (${e2.status})`);
+      } else {
+        toast.error("Network error");
+      }
     } finally {
       setSubmitting(false);
     }
