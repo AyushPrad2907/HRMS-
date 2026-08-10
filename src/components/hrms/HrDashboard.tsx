@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   Megaphone,
   Paperclip,
+  Lock,
 } from "lucide-react";
 import {
   Bar,
@@ -591,6 +592,7 @@ function OverviewSection({ onNavigate }: { onNavigate: (id: string) => void }) {
 type EmployeeFormState = {
   displayName: string;
   email: string;
+  password: string;
   employeeCode: string;
   departmentId: string;
   designation: string;
@@ -603,6 +605,7 @@ type EmployeeFormState = {
 const EMPTY_FORM: EmployeeFormState = {
   displayName: "",
   email: "",
+  password: "",
   employeeCode: "",
   departmentId: "",
   designation: "",
@@ -649,6 +652,7 @@ function EmployeesSection() {
       setForm({
         displayName: editing.name,
         email: editing.email,
+        password: "",
         employeeCode: editing.employeeCode,
         departmentId: editing.departmentId,
         designation: editing.designation,
@@ -686,6 +690,10 @@ function EmployeesSection() {
       toast.error("Please fill all required fields");
       return;
     }
+    if (!editing && form.password.trim().length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -698,6 +706,7 @@ function EmployeesSection() {
         joinDate: form.joinDate,
         phone: form.phone || undefined,
         bio: form.bio || undefined,
+        ...(editing ? {} : { password: form.password }),
       };
       await apiFetch(
         editing ? `/api/employees/${editing.id}` : "/api/employees",
@@ -712,7 +721,15 @@ function EmployeesSection() {
       void refetch();
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Failed (${e.status})`);
+        const raw = e.message.replace(/^API \d+: /, "");
+        let readable = `Failed (${e.status})`;
+        try {
+          const parsed = JSON.parse(raw) as { error?: string; message?: string };
+          readable = parsed.error ?? parsed.message ?? readable;
+        } catch {
+          if (raw) readable = raw;
+        }
+        toast.error(readable);
       } else {
         toast.error("Network error");
       }
@@ -947,6 +964,34 @@ function EmployeesSection() {
                   disabled={!!editing}
                 />
               </div>
+              {editing ? (
+                <div className="space-y-1.5">
+                  <Label>Password</Label>
+                  <div className="flex items-center gap-2 rounded-md border border-dashed border-muted-foreground/30 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    <Lock className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    Password can be reset via profile.
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="emp-password" className="flex items-center gap-1.5">
+                    <Lock className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Password
+                  </Label>
+                  <Input
+                    id="emp-password"
+                    type="password"
+                    placeholder="Min. 8 characters"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    required
+                    minLength={8}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Employee will log in with their email + this password.
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="emp-code">Employee code</Label>

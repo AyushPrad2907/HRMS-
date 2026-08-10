@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession, hasPermission } from "@/lib/auth/session";
+import { hashPassword } from "@/lib/auth/password";
 
 // GET /api/employees — list (HR: all, others: own only)
 export async function GET(req: NextRequest) {
@@ -69,9 +70,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const body = await req.json();
-  const { displayName, email, employeeCode, departmentId, designation, roleId, joinDate, phone, bio } = body;
+  const { displayName, email, employeeCode, departmentId, designation, roleId, joinDate, phone, bio, password } = body;
   if (!displayName || !email || !employeeCode || !departmentId || !designation || !roleId || !joinDate) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
+  }
+  // Maps to supabase.auth.admin.inviteUserByEmail() in production;
+  // here HR sets the employee's initial password directly.
+  if (typeof password !== "string" || password.length < 8) {
+    return NextResponse.json({ error: "password must be at least 8 characters" }, { status: 400 });
   }
 
   const existing = await db.employee.findUnique({ where: { employeeCode } });
@@ -80,7 +86,7 @@ export async function POST(req: NextRequest) {
   const user = await db.user.create({
     data: {
       email,
-      passwordHash: "demo-hash-invite",
+      passwordHash: hashPassword(password),
       emailVerified: new Date(),
       profile: { create: { displayName, phone, bio } },
     },

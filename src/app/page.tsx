@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AuthScreen from "@/components/hrms/AuthScreen";
 import HrDashboard from "@/components/hrms/HrDashboard";
-import TeacherDashboard from "@/components/hrms/TeacherDashboard";
 import MarketingDashboard from "@/components/hrms/MarketingDashboard";
+import TeacherDashboard from "@/components/hrms/TeacherDashboard";
 import { Card } from "@/components/ui/card";
 import type { Candidate, SessionUser } from "@/lib/types";
 
@@ -51,12 +52,7 @@ export default function Page() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 text-center">
-        <div className="space-y-1">
-          <p className="text-base font-medium">No session.</p>
-          <p className="text-sm text-muted-foreground">Please sign in to continue.</p>
-        </div>
-      </div>
+      <AuthScreen onAuthenticated={(u, c) => setData({ user: u, candidates: c })} />
     );
   }
 

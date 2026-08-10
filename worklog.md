@@ -530,3 +530,92 @@ Stage Summary:
 - `bun run lint` clean for the three dashboard files.
 - Cold-start curl test: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/` returns 200; dev.log shows 401 -> /api/session 200 -> 200 retry pattern as expected.
 - No other files touched (no API routes, no page.tsx, no other components). Emerald accent preserved (no color changes). TypeScript strict, no `any`.
+
+---
+Task ID: AUTH-FRONTEND
+Agent: general-purpose
+Task: AuthScreen (login + HR signup) + page.tsx wiring + Sign out in RoleSwitcher
+
+Work Log:
+- Read worklog.md, page.tsx, RoleSwitcher.tsx, lib/types.ts, globals.css, and the existing shadcn/ui components (card, button, input, label, tabs, separator, badge, alert, sonner) to confirm available primitives and emerald theme tokens (--primary oklch(0.55 0.15 160)).
+- Confirmed `sonner` and `lucide-react` are installed; `Toaster` is mounted in src/app/layout.tsx (top-right, richColors), so `toast.error/toast.success` work without further setup.
+- Created `src/components/hrms/AuthScreen.tsx` ("use client", default export, React 19 `React.JSX.Element` return types, no `any`):
+  * Split-screen: LEFT brand panel (hidden lg:flex w-1/2, `bg-gradient-to-br from-emerald-500 to-teal-700`) with white "I" logo in a white/20 rounded square, "Implex Edu HRMS" wordmark, tagline, 4 feature bullets (Role-based dashboards / Attendance & leave / Reports & analytics / Audit & security) with Check icons, and `© 2025 Implex Edu` footer.
+  * RIGHT panel: `max-w-md w-full` Card with a Tabs (TabsList: "Sign in" / "Create HR account").
+  * Sign in tab: "Welcome back" heading + subtitle, Email + Password inputs (with Mail/Lock icons and an Eye/EyeOff visibility toggle), full-width primary Button with `Loader2` spinner + "Signing in…" label while loading. On non-200 or fetch throw: destructive Alert with the server error message + `toast.error`. On success: calls `onAuthenticated(user, candidates)`.
+  * Demo accounts section: separator with "DEMO ACCOUNTS" label, muted bordered card with 3 outline Buttons ("Priya — HR", "Arun — Teacher", "Kabir — Marketing"). Clicking one fills `email` + `password = "implex123"` via setState (does NOT auto-submit). Helper text `Password: implex123`.
+  * Sign up tab: "Create HR account" heading + subtitle, fields Full name / Email / Password (>=8) / Confirm password + optional Employee code ("auto-generated if blank") / Designation ("HR Manager"). Inline validation errors per field (name non-empty, email has @, password >= 8, passwords match). On 409 → destructive Alert "Email already registered. Try signing in." + toast. On success: calls `onAuthenticated`. Footer note: "By creating an account you become the HR administrator for your organization."
+  * Only touches `/api/auth/login` and `/api/auth/signup` (no protected APIs). Emerald accent throughout (primary button, primary icon color, emerald gradient panel). Mobile: left panel hidden, right panel full-width.
+- Modified `src/app/page.tsx`: imported `AuthScreen` and replaced the "No session. Please sign in" fallback block with `<AuthScreen onAuthenticated={(u, c) => setData({ user: u, candidates: c })} />`. LoadingScreen, error state, and role-routing to dashboards unchanged.
+- Modified `src/components/hrms/RoleSwitcher.tsx`:
+  * Added `LogOut` to the lucide-react import.
+  * Added `handleSignOut()` which `await fetch("/api/auth/logout", { method: "POST" })` then `window.location.reload()` (mirrors the existing `handleSwitch` pattern, safe try/catch/finally).
+  * Added a `DropdownMenuSeparator` after the candidate `ScrollArea`, followed by a "Sign out" `DropdownMenuItem` (LogOut icon, destructive text color) wired to `void handleSignOut()`. All existing role-switching behavior is untouched.
+- Verification: `npx tsc --noEmit 2>&1 | grep -E "AuthScreen|page.tsx|RoleSwitcher"` returns zero matches (clean). Full `tsc --noEmit` shows only pre-existing errors in `examples/` and `skills/` directories, none in our three files.
+
+Stage Summary:
+- Created: `src/components/hrms/AuthScreen.tsx`
+- Modified: `src/app/page.tsx` (import AuthScreen; replace no-session fallback with `<AuthScreen onAuthenticated={...} />`)
+- Modified: `src/components/hrms/RoleSwitcher.tsx` (LogOut import, `handleSignOut`, separator + "Sign out" DropdownMenuItem at end of menu)
+- TypeScript strict-clean for the three touched files (only unrelated errors remain in examples/ and skills/).
+- No new dependencies, no API routes touched, no dashboards modified. Emerald accent preserved (no indigo/blue). All form state is plain `React.useState` (no react-hook-form).
+
+---
+Task ID: AUTH-FORM
+Agent: general-purpose
+Task: Add password field to HR employee create form
+
+Work Log:
+- Read worklog.md and the full HrDashboard.tsx (EmployeesSection): located EmployeeFormState type, EMPTY_FORM, the sheet-open effect that hydrates form on edit, the submitForm handler (POST /api/employees on create, PATCH /api/employees/[id] on edit), and the Sheet form UI.
+- Added `password: string` to EmployeeFormState and `password: ""` to EMPTY_FORM (so it resets on every fresh "Add" open).
+- Added `password: ""` to the edit-mode setForm branch (kept empty — password is never surfaced on edit; satisfies the type and is omitted from the PATCH body).
+- Added a min-8-char client validation guard in submitForm, only when `!editing`.
+- Extended the POST payload with `...(editing ? {} : { password: form.password })` so password is sent only on create (PATCH body stays unchanged per the parallel route contract).
+- Inserted a conditionally-rendered Password field in the Sheet (after Email): on create shows a Lock-icon Label + type=password Input (placeholder "Min. 8 characters", required, minLength=8) with helper text "Employee will log in with their email + this password."; on edit shows a disabled dashed note "Password can be reset via profile." with a Lock icon. Emerald accent only (text-emerald-600 / dark:text-emerald-400), no indigo/blue.
+- Improved the submitForm catch so a 400 from the API surfaces a readable message: parses ApiError.message body as JSON ({error|message}), falling back to the raw body, then toasts it. (confirmDelete catch left untouched.)
+- Verified `npx tsc --noEmit 2>&1 | grep HrDashboard` returns no matches (clean). Remaining repo-wide tsc errors are pre-existing and confined to examples/ and skills/ (unrelated to this task).
+
+Stage Summary:
+- File modified: src/components/hrms/HrDashboard.tsx (surgical edits only — no other files touched, no API routes touched, no tests written).
+- Form state now carries `password`; EMPTY_FORM and the edit-hydrate both initialise it to "". POST body includes `password` only on create. PATCH body omits it. Password field renders only when creating; edit mode shows a disabled note. Min-8 validation + readable 400 error toast in place.
+
+---
+Task ID: AUTH-BACKEND
+Agent: general-purpose
+Task: Real login system backend — password hashing, login/signup/logout APIs, remove auto-bootstrap, password in employee creation, re-seed
+
+Work Log:
+- Read worklog.md, prisma/schema.prisma, src/lib/auth/session.ts, src/app/api/session/route.ts, src/app/api/employees/route.ts, prisma/seed.ts, src/lib/db.ts, src/lib/types.ts to understand existing patterns (SessionUser/Candidate shapes, listCandidates query, audit log pattern, ID conventions).
+- Created src/lib/auth/password.ts using Node's built-in `crypto` (randomBytes 16-byte salt + scryptSync 64-byte hash, stored as `salt:hex:hash:hex`; verifyPassword uses timingSafeEqual to prevent timing attacks). No external deps installed.
+- Created src/app/api/auth/login/route.ts: POST {email,password} → finds user with profile/employee/department/userRoles/role/rolePermissions; if missing or no employee record → 401 "Invalid credentials"; verifyPassword check → 401 on mismatch; on success sets sessionCookie(employee.id), resolves SessionUser via resolveSessionForEmployee, returns {user, candidates} where candidates is the same active-employee list as the role switcher. Email is normalized (trim+lowercase).
+- Created src/app/api/auth/signup/route.ts: POST {name,email,password,employeeCode?,designation?} → bootstrap HR ADMIN account. Validates name non-empty, email contains @, password ≥8 chars. 409 if email exists. Forces dept-hr (by code "HR") and hr_admin role (by name). Auto-generates `IMP-HR-<3-digit>` (count of IMP-HR-* employees + 1, zero-padded) when employeeCode omitted. Default designation "HR Manager". Runs in a single $transaction creating User (with hashPassword), Profile (displayName=name), Employee (departmentId, designation, joinDate=now, status=active, employeeCode), UserRole (userId, hr_admin roleId), and AuditLog (action "auth.signup", targetTable "users", targetId=user.id, afterState={email, employeeCode}). Sets cookie, returns {user, candidates}. Public route — no session required. Added the production-mapping comment (supabase.auth.signUp).
+- Created src/app/api/auth/logout/route.ts: POST (no body) → clears session cookie, returns {ok:true}. Public.
+- Modified src/lib/auth/session.ts: getSession() already returns null when no cookie is present (no auto-bootstrap lived inside getSession itself — it was in /api/session GET). Updated the doc comment to make this explicit: "NOTE: there is NO auto-bootstrap. An unauthenticated request gets null." and to reflect that login/logout now set/clear the cookie. resolveSessionForEmployee, sessionCookie, clearSessionCookie, hasPermission, requirePermission, ForbiddenError, SessionUser unchanged.
+- Modified src/app/api/session/route.ts: GET no longer bootstraps — it calls getSession() and returns {user:null, candidates:[]} when unauthenticated, or {user:session, candidates:listCandidates()} when authenticated. No cookie is set on GET. POST (switch user) is unchanged.
+- Modified src/app/api/employees/route.ts: POST now reads `password` from the body, validates `typeof === "string" && length >= 8` → 400 "password must be at least 8 characters" if invalid, and stores `hashPassword(password)` instead of the old placeholder `"demo-hash-invite"`. Added the supabase.auth.admin.inviteUserByEmail() mapping comment.
+- Modified prisma/seed.ts: imports hashPassword from `../src/lib/auth/password` (resolved cleanly via tsconfig `@/*` paths and bundler moduleResolution — bun has no trouble). Added `const DEMO_PASSWORD = "implex123";` constant. Replaced the placeholder hash with `hashPassword(DEMO_PASSWORD)` for both create and update branches of the user upsert (so re-seeding fixes any stale demo-hash-implex values from earlier seeds). Appended `console.log("Demo password for all seeded accounts: implex123")` at the end of main().
+- Re-ran `bun prisma/seed.ts` — output:
+    Seeding Implex Edu HRMS…
+    Seed complete.
+    Demo password for all seeded accounts: implex123
+- Ran `npx tsc --noEmit` and grepped for `auth/|password|session|employees/route|seed` → no errors. (Unrelated errors in examples/ and skills/ directories remain, none touched.)
+- Live curl verification against the running dev server (port 3000):
+    * GET /api/session without cookie → `{user:null, candidates:[]}` HTTP 200 (no bootstrap).
+    * POST /api/auth/login with priya.sharma@implexedu.in / implex123 → HTTP 200, returns full SessionUser (employeeId `emp-priya`, roles `["hr_admin"]`, all 14 permissions) + 7 candidates. Cookie set.
+    * POST /api/auth/login with wrong password → `{error:"Invalid credentials"}` HTTP 401.
+    * POST /api/auth/login with nonexistent email → `{error:"Invalid credentials"}` HTTP 401 (no user-enumeration leak).
+    * POST /api/auth/signup with a new email (test.hr.admin@implexedu.in) → HTTP 200, returns new HR user with auto-generated employeeCode `IMP-HR-002`, hr_admin role, dept-hr, cookie set.
+    * POST /api/auth/signup with the same email again → `{error:"Email already registered"}` HTTP 409.
+    * POST /api/auth/logout (with cookie jar update) → `{ok:true}` HTTP 200; subsequent GET /api/session → `{user:null, candidates:[]}` (cookie cleared).
+    * GET /api/audit after signup → first item is the `auth.signup` audit row with afterState `{"email":"test.hr.admin@implexedu.in","employeeCode":"IMP-HR-002"}`.
+
+Stage Summary:
+- Created: src/lib/auth/password.ts
+- Created: src/app/api/auth/login/route.ts
+- Created: src/app/api/auth/signup/route.ts
+- Created: src/app/api/auth/logout/route.ts
+- Modified: src/lib/auth/session.ts (doc comment + explicit no-bootstrap note)
+- Modified: src/app/api/session/route.ts (removed bootstrap from GET)
+- Modified: src/app/api/employees/route.ts (accept + hash password on create)
+- Modified: prisma/seed.ts (real scrypt hashes, DEMO_PASSWORD constant, demo-password log line)
+- No frontend files touched. No new dependencies installed. No tests written.

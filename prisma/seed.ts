@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { PrismaClient } from "@prisma/client";
+import { hashPassword } from "../src/lib/auth/password";
+
+const DEMO_PASSWORD = "implex123";
 
 const db = new PrismaClient();
 
@@ -272,11 +275,11 @@ async function main() {
   for (const e of employees) {
     await db.user.upsert({
       where: { id: e.userId },
-      update: {},
+      update: { passwordHash: hashPassword(DEMO_PASSWORD) },
       create: {
         id: e.userId,
         email: e.email,
-        passwordHash: "demo-hash-implex",
+        passwordHash: hashPassword(DEMO_PASSWORD),
         emailVerified: new Date(),
       },
     });
@@ -601,6 +604,7 @@ async function main() {
   await db.settings.create({ data: { key: "leave_balances", value: JSON.stringify({ casual: 12, sick: 8, earned: 20, unpaid: 0 }) } });
 
   console.log("Seed complete.");
+  console.log("Demo password for all seeded accounts: implex123");
 }
 
 main()

@@ -18,8 +18,12 @@ export type SessionUser = {
 const COOKIE_NAME = "implex_session_emp";
 
 /**
- * Demo-only session: the active employee id is stored in a cookie.
- * In production this would be a Supabase JWT verified in middleware (Section 8).
+ * Session: the active employee id is stored in an httpOnly cookie set by
+ * /api/auth/login or /api/auth/signup, and cleared by /api/auth/logout.
+ * In production this would be a Supabase JWT verified in middleware (Section 8);
+ * the local implementation uses a signed-by-hash employee id cookie.
+ *
+ * NOTE: there is NO auto-bootstrap. An unauthenticated request gets `null`.
  */
 export async function getSession(): Promise<SessionUser | null> {
   const store = await cookies();

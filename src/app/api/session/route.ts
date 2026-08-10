@@ -2,28 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession, resolveSessionForEmployee, sessionCookie } from "@/lib/auth/session";
 
-// GET /api/session — current demo session
+// GET /api/session — current session (or null when unauthenticated).
+// No bootstrap: an unauthenticated request gets { user: null, candidates: [] }.
+// Login is performed via /api/auth/login; logout via /api/auth/logout.
 export async function GET() {
   const session = await getSession();
   if (!session) {
-    // Bootstrap: default to the HR admin employee so the app has a session.
-    const fallback = await db.employee.findFirst({
-      where: { employeeCode: "IMP-HR-001" },
-    });
-    if (!fallback) {
-      return NextResponse.json({ user: null, candidates: [] });
-    }
-    const user = await resolveSessionForEmployee(fallback.id);
-    const candidates = await listCandidates();
-    const res = NextResponse.json({ user, candidates });
-    res.cookies.set(sessionCookie(fallback.id));
-    return res;
+    return NextResponse.json({ user: null, candidates: [] });
   }
   const candidates = await listCandidates();
   return NextResponse.json({ user: session, candidates });
 }
 
-// POST /api/session — switch demo session by employeeId
+// POST /api/session — switch demo session by employeeId.
+// Kept for demo convenience (role switcher). It just sets the cookie.
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const employeeId = body.employeeId as string | undefined;

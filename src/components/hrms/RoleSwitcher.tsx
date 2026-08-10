@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronsUpDown, Check, User } from "lucide-react";
+import { ChevronsUpDown, Check, LogOut, User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,16 @@ export function RoleSwitcher({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId }),
       });
+    } catch {
+      // ignore — reload will still surface server state
+    } finally {
+      window.location.reload();
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
     } catch {
       // ignore — reload will still surface server state
     } finally {
@@ -170,6 +180,14 @@ export function RoleSwitcher({
             ) : null}
           </div>
         </ScrollArea>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => void handleSignOut()}
+          className="gap-2 py-2 text-destructive focus:text-destructive"
+        >
+          <LogOut className="size-4" />
+          <span className="flex-1 text-sm">Sign out</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
       <ProfileSheet open={profileOpen} onOpenChange={setProfileOpen} />
     </DropdownMenu>
