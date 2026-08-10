@@ -87,11 +87,11 @@ function LoadingScreen() {
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
       <Card className="flex flex-col items-center gap-4 px-10 py-12 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-md animate-pulse">
+          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md animate-pulse">
             <span className="text-lg font-bold">I</span>
           </div>
           <div className="text-xl font-semibold tracking-tight">
-            Implex <span className="text-indigo-600">Edu</span>
+            Implex <span className="text-emerald-600">Edu</span>
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -106,7 +106,7 @@ function LoadingScreen() {
 function Spinner() {
   return (
     <svg
-      className="h-4 w-4 animate-spin text-indigo-500"
+      className="h-4 w-4 animate-spin text-emerald-500"
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"

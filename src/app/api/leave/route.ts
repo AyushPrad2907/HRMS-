@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
       approver: l.approver?.user?.profile?.displayName ?? null,
       decidedAt: l.decidedAt,
       createdAt: l.createdAt,
+      attachmentPath: l.attachmentPath,
     })),
   });
 }
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
   if (!hasPermission(session, "leave:request"))
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const body = await req.json();
-  const { leaveType, startDate, endDate, reason } = body;
+  const { leaveType, startDate, endDate, reason, attachmentPath } = body;
   if (!leaveType || !startDate || !endDate || !reason) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
@@ -63,7 +64,18 @@ export async function POST(req: NextRequest) {
   if (e < s) return NextResponse.json({ error: "end before start" }, { status: 400 });
 
   const lr = await db.leaveRequest.create({
-    data: { employeeId: session.employeeId, leaveType, startDate: s, endDate: e, reason, status: "pending" },
+    data: {
+      employeeId: session.employeeId,
+      leaveType,
+      startDate: s,
+      endDate: e,
+      reason,
+      status: "pending",
+      attachmentPath:
+        typeof attachmentPath === "string" && attachmentPath.trim().length > 0
+          ? attachmentPath.trim()
+          : null,
+    },
   });
 
   // Notify all HR (permission leave:approve). For demo, find HR employee.

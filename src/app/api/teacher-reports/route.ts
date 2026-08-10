@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
         topicsCovered: c.topicsCovered,
         studentsAttended: c.studentsAttended,
         assignmentsChecked: c.assignmentsChecked,
+        notesUrl: c.notesUrl,
       })),
     })),
   });
@@ -78,13 +79,23 @@ export async function POST(req: NextRequest) {
       reportDate: date,
       notes: notes ?? null,
       classes: {
-        create: classes.map((c: { batch: string; subject: string; topicsCovered: string; studentsAttended: number; assignmentsChecked: boolean }) => ({
-          batch: c.batch,
-          subject: c.subject,
-          topicsCovered: c.topicsCovered,
-          studentsAttended: Number(c.studentsAttended) || 0,
-          assignmentsChecked: !!c.assignmentsChecked,
-        })),
+        create: classes.map(
+          (c: {
+            batch: string;
+            subject: string;
+            topicsCovered: string;
+            studentsAttended: number;
+            assignmentsChecked: boolean;
+            notesUrl?: string | null;
+          }) => ({
+            batch: c.batch,
+            subject: c.subject,
+            topicsCovered: c.topicsCovered,
+            studentsAttended: Number(c.studentsAttended) || 0,
+            assignmentsChecked: !!c.assignmentsChecked,
+            notesUrl: c.notesUrl ?? null,
+          }),
+        ),
       },
     },
     include: { classes: true },

@@ -14,6 +14,9 @@ import {
   Users,
   ShieldAlert,
   CalendarDays,
+  Plane,
+  Send,
+  Paperclip,
 } from "lucide-react";
 import {
   Bar,
@@ -36,8 +39,10 @@ import {
   StatusBadge,
   formatDate,
   formatCurrency,
+  formatDateTime,
   Badge,
 } from "@/components/hrms/shared";
+import { FileUpload } from "@/components/hrms/file-upload";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +52,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -160,6 +173,26 @@ type FollowupItem = {
 
 type FollowupsResponse = { items: FollowupItem[] };
 
+type LeaveItem = {
+  id: string;
+  employeeId: string;
+  employee: string;
+  code: string;
+  department: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  reason: string;
+  status: string;
+  approver: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  attachmentPath: string | null;
+};
+
+type LeaveResponse = { items: LeaveItem[] };
+
 type SettingItem = { key: string; value: unknown };
 
 type SettingsResponse = { items: SettingItem[] };
@@ -191,6 +224,14 @@ const MARKETING_NAV: NavItem[] = [
   { id: "leads", label: "Leads", icon: <Target /> },
   { id: "deals", label: "Deals", icon: <TrendingUp /> },
   { id: "followups", label: "Follow-ups", icon: <ListTodo /> },
+  { id: "leave", label: "Leave", icon: <Plane /> },
+];
+
+const LEAVE_TYPES: { value: string; label: string }[] = [
+  { value: "casual", label: "Casual" },
+  { value: "sick", label: "Sick" },
+  { value: "earned", label: "Earned" },
+  { value: "unpaid", label: "Unpaid" },
 ];
 
 // Emerald / sky / amber / rose / violet — fixed hex for recharts SVG fills.
@@ -1559,6 +1600,229 @@ function FollowupsSection() {
 }
 
 // ---------------------------------------------------------------------------
+// 6. Leave (request form with attachment + own requests table)
+// ---------------------------------------------------------------------------
+
+function prettifyLeaveType(t: string): string {
+  return t
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function LeaveSection() {
+  const leaveFetch = useFetch<LeaveResponse>("/api/leave");
+
+  const [leaveType, setLeaveType] = React.useState<string>("casual");
+  const [startDate, setStartDate] = React.useState<string>(todayInputValue());
+  const [endDate, setEndDate] = React.useState<string>(todayInputValue());
+  const [reason, setReason] = React.useState<string>("");
+  const [attachmentPath, setAttachmentPath] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!leaveType) {
+      toast.error("Pick a leave type.");
+      return;
+    }
+    if (!startDate || !endDate) {
+      toast.error("Pick start and end dates.");
+      return;
+    }
+    if (new Date(endDate) < new Date(startDate)) {
+      toast.error("End date must be on or after the start date.");
+      return;
+    }
+    if (!reason.trim()) {
+      toast.error("Reason is required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await fetch("/api/leave", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leaveType,
+          startDate,
+          endDate,
+          reason: reason.trim(),
+          attachmentPath,
+        }),
+      });
+      if (!r.ok) {
+        const j = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(j?.error ?? `HTTP ${r.status}`);
+      }
+      toast.success("Leave request submitted");
+      setReason("");
+      setLeaveType("casual");
+      setStartDate(todayInputValue());
+      setEndDate(todayInputValue());
+      setAttachmentPath(null);
+      void leaveFetch.refetch();
+    } catch (e2) {
+      toast.error((e2 as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const loading = leaveFetch.loading && !leaveFetch.data;
+
+  return (
+    <div className="space-y-6">
+      <SectionHeader title="My Leave" description="Request and track leave" />
+
+      <Card className="px-6 py-5">
+        <CardHeader className="px-0 pb-3">
+          <CardTitle className="text-sm font-semibold">Request Leave</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          <form onSubmit={submit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="mkt-leave-type">Leave Type</Label>
+                <Select value={leaveType} onValueChange={setLeaveType}>
+                  <SelectTrigger id="mkt-leave-type" className="w-full">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEAVE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mkt-leave-start">Start Date</Label>
+                <Input
+                  id="mkt-leave-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mkt-leave-end">End Date</Label>
+                <Input
+                  id="mkt-leave-end"
+                  type="date"
+                  value={endDate}
+                  min={startDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mkt-leave-reason">Reason</Label>
+              <Textarea
+                id="mkt-leave-reason"
+                rows={3}
+                placeholder="Briefly describe the reason for leave"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <FileUpload
+                category="leave"
+                accept=".pdf,image/*"
+                label="Attachment (optional)"
+                onUploaded={setAttachmentPath}
+              />
+              {attachmentPath ? (
+                <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                  <Paperclip className="size-3.5 shrink-0" />
+                  <span className="truncate font-medium">{attachmentPath}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachmentPath(null)}
+                    className="ml-auto text-emerald-700/70 hover:text-emerald-700 dark:text-emerald-300/70 dark:hover:text-emerald-300"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={submitting}>
+                <Send className="size-4" />
+                {submitting ? "Submitting…" : "Submit Request"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card className="px-0 py-0">
+        <CardHeader className="flex-row items-center justify-between px-6 py-4">
+          <CardTitle className="text-sm font-semibold">My Requests</CardTitle>
+        </CardHeader>
+        <div className="max-h-[70vh] overflow-y-auto">
+          {loading ? (
+            <div className="p-6">
+              <Skeleton className="h-32 w-full" />
+            </div>
+          ) : leaveFetch.error ? (
+            <div className="p-6">
+              <ErrorState message={leaveFetch.error.message} />
+            </div>
+          ) : !leaveFetch.data || leaveFetch.data.items.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                icon={<Plane />}
+                title="No leave requests"
+                description="Submit your first leave request above."
+              />
+            </div>
+          ) : (
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-card">
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Start</TableHead>
+                  <TableHead>End</TableHead>
+                  <TableHead className="text-right">Days</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Approver</TableHead>
+                  <TableHead>Decided At</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {leaveFetch.data.items.map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {prettifyLeaveType(l.leaveType)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatDate(l.startDate)}</TableCell>
+                    <TableCell>{formatDate(l.endDate)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {l.days}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={l.status} />
+                    </TableCell>
+                    <TableCell>{l.approver ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {l.decidedAt ? formatDateTime(l.decidedAt) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main dashboard
 // ---------------------------------------------------------------------------
 
@@ -1595,6 +1859,8 @@ export default function MarketingDashboard({
         return <DealsSection />;
       case "followups":
         return <FollowupsSection />;
+      case "leave":
+        return <LeaveSection />;
       default:
         return <OverviewSection user={user} onNavigate={setSection} />;
     }

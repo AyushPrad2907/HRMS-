@@ -21,6 +21,8 @@ import {
   ClipboardList,
   Activity,
   ShieldAlert,
+  Megaphone,
+  Paperclip,
 } from "lucide-react";
 import {
   Bar,
@@ -53,6 +55,7 @@ import {
   formatCurrency,
   Badge,
 } from "@/components/hrms/shared";
+import BroadcastComposer from "@/components/hrms/BroadcastComposer";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -187,6 +190,7 @@ type LeaveItem = {
   approver: string | null;
   decidedAt: string | null;
   createdAt: string;
+  attachmentPath: string | null;
 };
 
 type TeacherClass = {
@@ -196,6 +200,7 @@ type TeacherClass = {
   topicsCovered: string;
   studentsAttended: number;
   assignmentsChecked: boolean;
+  notesUrl: string | null;
 };
 
 type MarketingCall = {
@@ -337,6 +342,7 @@ const HR_NAV: NavItem[] = [
   { id: "reports", label: "Reports", icon: <FileText /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 /> },
   { id: "audit", label: "Audit Log", icon: <ScrollText /> },
+  { id: "announce", label: "Announce", icon: <Megaphone /> },
   { id: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
 
@@ -1351,6 +1357,17 @@ function LeaveSection() {
                           <span className="font-medium text-foreground">Reason:</span> {l.reason}
                         </p>
                       ) : null}
+                      {l.attachmentPath ? (
+                        <a
+                          href={l.attachmentPath}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                        >
+                          <Paperclip className="size-3.5" />
+                          View attachment
+                        </a>
+                      ) : null}
                     </div>
                     {data.canApprove ? (
                       <div className="flex gap-2">
@@ -1395,6 +1412,7 @@ function LeaveSection() {
                       <TableHead>Status</TableHead>
                       <TableHead>Approver</TableHead>
                       <TableHead>Decided</TableHead>
+                      <TableHead>Attachment</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1421,6 +1439,21 @@ function LeaveSection() {
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {l.decidedAt ? formatDateTime(l.decidedAt) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {l.attachmentPath ? (
+                            <a
+                              href={l.attachmentPath}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                            >
+                              <Paperclip className="size-3.5" />
+                              View
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -2272,6 +2305,16 @@ export default function HrDashboard({
         return <AnalyticsSection />;
       case "audit":
         return <AuditSection />;
+      case "announce":
+        return (
+          <div className="space-y-6">
+            <SectionHeader
+              title="Broadcast"
+              description="Send announcements to roles or departments"
+            />
+            <BroadcastComposer onSent={() => { /* optionally refetch notifications */ }} />
+          </div>
+        );
       case "settings":
         return <SettingsSection />;
       default:

@@ -18,6 +18,8 @@ import {
   Send,
   ShieldAlert,
   CalendarDays,
+  FileText,
+  Paperclip,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -33,6 +35,7 @@ import {
   formatDateTime,
   Badge,
 } from "@/components/hrms/shared";
+import { FileUpload } from "@/components/hrms/file-upload";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +93,7 @@ type TeacherClass = {
   topicsCovered: string;
   studentsAttended: number;
   assignmentsChecked: boolean;
+  notesUrl: string | null;
 };
 
 type TeacherReportItem = {
@@ -132,6 +136,7 @@ type LeaveItem = {
   approver: string | null;
   decidedAt: string | null;
   createdAt: string;
+  attachmentPath: string | null;
 };
 
 type SettingItem = { key: string; value: unknown };
@@ -486,6 +491,7 @@ type ClassFormRow = {
   topicsCovered: string;
   studentsAttended: string;
   assignmentsChecked: boolean;
+  notesUrl: string | null;
 };
 
 const EMPTY_CLASS_ROW: ClassFormRow = {
@@ -494,6 +500,7 @@ const EMPTY_CLASS_ROW: ClassFormRow = {
   topicsCovered: "",
   studentsAttended: "",
   assignmentsChecked: false,
+  notesUrl: null,
 };
 
 function DailyReportSection({
@@ -553,6 +560,7 @@ function DailyReportSection({
           topicsCovered: c.topicsCovered.trim(),
           studentsAttended: Number(c.studentsAttended),
           assignmentsChecked: c.assignmentsChecked,
+          notesUrl: c.notesUrl ?? null,
         })),
       };
       const r = await fetch("/api/teacher-reports", {
@@ -696,7 +704,28 @@ function DailyReportSection({
                         Assignments checked
                       </Label>
                     </div>
+                    <div className="flex items-end justify-start pb-0.5 sm:col-span-2 lg:col-span-2">
+                      <FileUpload
+                        category="report"
+                        accept=".pdf,.txt"
+                        buttonText="Notes"
+                        onUploaded={(path) => updateRow(i, { notesUrl: path })}
+                      />
+                    </div>
                   </div>
+                  {row.notesUrl ? (
+                    <div className="mt-3 flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                      <FileText className="size-3.5" />
+                      <span className="truncate font-medium">{row.notesUrl}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateRow(i, { notesUrl: null })}
+                        className="ml-auto text-emerald-700/70 hover:text-emerald-700 dark:text-emerald-300/70 dark:hover:text-emerald-300"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : null}
                 </Card>
               ))}
             </div>
@@ -835,6 +864,7 @@ function HistorySection() {
                           <TableHead>Topics</TableHead>
                           <TableHead className="text-right">Students</TableHead>
                           <TableHead className="text-center">Asgn.</TableHead>
+                          <TableHead>Notes</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -853,6 +883,21 @@ function HistorySection() {
                                 <Check className="mx-auto size-4 text-emerald-600 dark:text-emerald-400" />
                               ) : (
                                 <span className="text-muted-foreground">✗</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {c.notesUrl ? (
+                                <a
+                                  href={c.notesUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                                >
+                                  <FileText className="size-3.5" />
+                                  View notes
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
                               )}
                             </TableCell>
                           </TableRow>
@@ -1021,6 +1066,7 @@ function LeaveSection() {
   const [startDate, setStartDate] = React.useState<string>(todayISODate());
   const [endDate, setEndDate] = React.useState<string>(todayISODate());
   const [reason, setReason] = React.useState<string>("");
+  const [attachmentPath, setAttachmentPath] = React.useState<string | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
   const balances = parseLeaveBalances(settingsFetch.data?.items);
@@ -1053,6 +1099,7 @@ function LeaveSection() {
           startDate,
           endDate,
           reason: reason.trim(),
+          attachmentPath,
         }),
       });
       if (!r.ok) {
@@ -1064,6 +1111,7 @@ function LeaveSection() {
       setLeaveType("casual");
       setStartDate(todayISODate());
       setEndDate(todayISODate());
+      setAttachmentPath(null);
       void leaveFetch.refetch();
     } catch (e2) {
       toast.error((e2 as Error).message);
@@ -1131,6 +1179,27 @@ function LeaveSection() {
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <FileUpload
+                  category="leave"
+                  accept=".pdf,image/*"
+                  label="Attachment (optional)"
+                  onUploaded={setAttachmentPath}
+                />
+                {attachmentPath ? (
+                  <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                    <Paperclip className="size-3.5 shrink-0" />
+                    <span className="truncate font-medium">{attachmentPath}</span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachmentPath(null)}
+                      className="ml-auto text-emerald-700/70 hover:text-emerald-700 dark:text-emerald-300/70 dark:hover:text-emerald-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div className="flex justify-end">
                 <Button type="submit" disabled={submitting}>

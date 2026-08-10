@@ -1,0 +1,209 @@
+   200→   200→Task: Build file upload infrastructure (API route + FileUpload/AvatarUpload components)
+   201→   201→
+   202→   202→Work Log:
+   203→   203→- Read worklog.md, prisma/schema.prisma (confirmed Profile.avatarUrl / LeaveRequest.attachmentPath / TeacherClass.notesUrl are pre-existing String? columns — no schema change), session.ts (getSession/hasPermission), db.ts, ui/button.tsx, ui/input.tsx, ui/label.tsx, ui/avatar.tsx, and an existing API route (audit/route.ts + leave/route.ts + session/route.ts) to mirror conventions.
+   204→   204→- Verified sonner Toaster is mounted in app/layout.tsx and `import { toast } from "sonner"` is the established pattern; lucide-react 0.525 available; primary color token is emerald-tinted (oklch 0.55 0.15 160) so `text-primary` IS the emerald accent.
+   205→   205→- Created `src/app/api/upload/route.ts` (POST handler):
+   206→   206→  * Uses `await req.formData()` (Next.js 16 Route Handler convention) with `next/server` NextRequest/NextResponse.
+   207→   207→  * Requires `getSession()` — returns 401 if missing.
+   208→   208→  * Accepts `file` (File) + optional `category` ("avatar" | "leave" | "report" | "document"; defaults to "document").
+   209→   209→  * MIME allow-list per category: avatar → jpeg/png/webp/gif; leave & document → pdf/jpeg/png/webp; report → text/plain + application/pdf.
+   210→   210→  * 5 MB hard cap; rejects empty files (400) and oversized (413) and disallowed MIME (415).
+   211→   211→  * Saves to `public/uploads/<category>/<crypto.randomUUID()>.<ext>` — extension derived from MIME map first, then sanitized original-name ext, then `bin` fallback. Uses `fs/promises.mkdir({ recursive: true })` + `writeFile`.
+   212→   212→  * Returns `{ path: "/uploads/<category>/<filename>", filename, size, mimeType }` with status 201.
+   213→   213→  * Added a clear code comment block noting the production target is Supabase Storage + signed URLs (spec §14), and that this demo intentionally uses local disk under /public for direct static serving — signed URLs NOT implemented.
+   214→   214→- Created 4 empty `.gitkeep` files so the category dirs are tracked by git:
+   215→   215→  `public/uploads/avatar/.gitkeep`, `public/uploads/leave/.gitkeep`, `public/uploads/report/.gitkeep`, `public/uploads/document/.gitkeep`.
+   216→   216→- Created `src/components/hrms/file-upload.tsx` ("use client") exporting two components:
+   217→   217→  * `FileUpload({ category, accept, label, onUploaded, onError, buttonText })` — ghost+sm Button with Upload icon, hidden `<input type="file">` triggered by `inputRef.current?.click()`. POSTs FormData (`file` + `category`) to `/api/upload`. Shows `Loader2` spinner + "Uploading…" while in flight (text-primary emerald). On success → `toast.success` + `onUploaded(path)`; on error → `toast.error` + `onError(msg)`. Resets input value afterward so the same file can be re-selected.
+   218→   218→  * `AvatarUpload({ currentUrl, displayName, onUploaded })` — circular `size-20` shadcn Avatar (AvatarImage + AvatarFallback initials, ring-2 ring-primary/20). "Change photo" Button (ghost+sm) with Camera icon opens file picker `accept="image/png,image/jpeg,image/webp"`. Optimistic local preview after upload; overlay spinner on the avatar while uploading. toast success/error.
+   219→   219→  * Shared internal `uploadFile(file, category)` helper to DRY the fetch logic. No `any` types — explicit `React.JSX.Element` return types, typed response shape.
+   220→   220→- Ran `npx tsc --noEmit 2>&1 | grep -E "upload|file-upload|FileUpload|AvatarUpload"` → CLEAN (no errors in new files; unrelated errors exist in examples/ and skills/ trees only).
+   221→   221→- Curl-verified the route end-to-end against the running dev server on :3000 (after bootstrapping a session via GET /api/session, which auto-sets the implex_session_emp cookie for HR admin emp-priya):
+   222→   222→  * avatar PNG → 201 `{"path":"/uploads/avatar/<uuid>.png","filename":"<uuid>.png","size":69,"mimeType":"image/png"}`
+   223→   223→  * no file → 400 `{"error":"missing file"}`
+   224→   224→  * image/png into report category → 415 `{"error":"mimeType \"image/png\" not allowed for category \"report\""}`
+   225→   225→  * text/plain into report → 201 `{"path":"/uploads/report/<uuid>.txt",...,"mimeType":"text/plain"}`
+   226→   226→  * no category field → defaults to document → 201 `{"path":"/uploads/document/<uuid>.png",...}`
+   227→   227→  * 6 MB file → 413 `{"error":"file too large (max 5242880 bytes)"}`
+   228→   228→  * saved file fetched via GET /uploads/avatar/<uuid>.png → 200, 69 bytes, content-type image/png, bytes identical to source (cmp ok)
+   229→   229→  * cleaned up test artifacts afterwards (only .gitkeep files remain in each category dir).
+   230→   230→
+   231→   231→Stage Summary:
+   232→   232→- Created: src/app/api/upload/route.ts
+   233→   233→- Created: src/components/hrms/file-upload.tsx (FileUpload + AvatarUpload named exports, plus default = FileUpload)
+   234→   234→- Created: public/uploads/avatar/.gitkeep, public/uploads/leave/.gitkeep, public/uploads/report/.gitkeep, public/uploads/document/.gitkeep
+   235→   235→- No schema changes; no dashboard wiring; no tests (per constraints).
+   236→   236→- Next: separate task will wire AvatarUpload into profile editing, FileUpload into LeaveRequest attachment + TeacherClass notes upload forms.
+   237→   237→
+   238→   238→---
+   239→   239→Task ID: W1-C
+   240→   240→Agent: general-purpose
+   241→   241→Task: Build broadcast composer (API route + BroadcastComposer component)
+   242→   242→
+   243→   243→Work Log:
+   244→   244→- Read worklog.md, prisma/schema.prisma (Notification + Employee + UserRole + AuditLog models), src/lib/auth/session.ts (getSession, hasPermission), src/lib/db.ts, src/components/hrms/shared.tsx (SectionHeader), and existing routes (audit, employees, leave, notifications, roles, departments) to learn patterns + the `notification:broadcast` permission catalog.
+   245→   245→- Confirmed `notification:broadcast` is seeded for hr_admin only (prisma/seed.ts:50,68) and that the demo HR session (Priya Sharma, IMP-HR-001) holds it.
+   246→   246→- Created POST /api/notifications/broadcast:
+   247→   247→  - 401 without session, 403 without `notification:broadcast` permission.
+   248→   248→  - Validates title/body non-empty + target.type in {all, role, department}; requires roleId for role, departmentId for department (400 otherwise).
+   249→   249→  - Resolves recipients via db.employee.findMany with `employmentStatus: "active", deletedAt: null` applied to all three target types (role filter via `user.userRoles.some.roleId`, department via `departmentId`).
+   250→   250→  - Uses `db.notification.createMany` (type "announcement", payload = JSON of {target}) for efficiency. Zero recipients → returns `{ created: 0 }` (HTTP 200, not an error).
+   251→   251→  - Writes an audit log (action "notification.broadcast", targetTable "notifications", targetId = `broadcast-<ts>`, afterState = JSON {title, target, recipientCount}) for every broadcast, including zero-recipient attempts.
+   252→   252→  - POST-only — composer fetches roles from /api/roles and departments from /api/departments directly.
+   253→   253→- Created BroadcastComposer.tsx ("use client"):
+   254→   254→  - Card titled "Broadcast Announcement" via SectionHeader; Megaphone icon badge in emerald accent.
+   255→   255→  - Fields: Title (Input), Message (Textarea, 4 rows), Audience (Select: Everyone / By role / By department). Selecting "By role" reveals a roles Select (lazy fetch /api/roles); "By department" reveals a departments Select (lazy fetch /api/departments).
+   256→   256→  - Live "Recipients:" hint shows the resolved audience label (org-wide, role label, or department name).
+   257→   257→  - Submit button "Send broadcast" with Send/Loader2 spinner; disabled while sending or when title/message empty or audience selection incomplete.
+   258→   258→  - On success: toast `Announcement sent to N recipients`, reset form, call onSent?.(). On error: toast error.
+   259→   259→  - Plain React state (no react-hook-form), strict TypeScript, no `any`. Note under the title: "Recipients receive an in-app notification instantly."
+   260→   260→- Ran `npx tsc --noEmit 2>&1 | grep -E "broadcast|BroadcastComposer"` → CLEAN (no errors). Note: return type uses `React.JSX.Element` (React 19 types dropped the global `JSX` namespace).
+   261→   261→- Curl-tested against running dev server (HR session via /api/session cookie):
+   262→   262→  - target=all → `{"created":7}`
+   263→   263→  - target=role (role-teacher) → `{"created":3}`
+   264→   264→  - target=department (dept-hr) → `{"created":1}`
+   265→   265→  - validation: empty title → HTTP 400 `{"error":"title is required"}`; role target without roleId → HTTP 400 `{"error":"roleId required for role target"}`
+   266→   266→  - zero-recipient (nonexistent roleId) → HTTP 200 `{"created":0}`
+   267→   267→  - audit log: 4 `notification.broadcast` rows with correct recipientCount per target.
+   268→   268→
+   269→   269→Stage Summary:
+   270→   270→- Files created:
+   271→   271→  - src/app/api/notifications/broadcast/route.ts (POST only)
+   272→   272→  - src/components/hrms/BroadcastComposer.tsx (default export, props: { onSent?: () => void })
+   273→   273→- No dashboards or other components modified. No tests written.
+   274→   274→- Ready for wiring into the HR dashboard in a separate task.
+   275→   275→
+   276→   276→---
+   277→   277→Task ID: W1-A
+   278→   278→Agent: general-purpose
+   279→   279→Task: Fix 401 flash + indigo colors; build ⌘K command palette
+   280→   280→
+   281→   281→Work Log:
+   282→   282→- Read worklog.md (recent W1-B/C entries for conventions), src/app/page.tsx, src/components/hrms/TopBar.tsx, src/components/hrms/AppShell.tsx, src/components/ui/command.tsx, src/components/ui/dialog.tsx, src/lib/auth/session.ts, src/app/api/session/route.ts, src/components/hrms/ThemeToggle.tsx, src/app/layout.tsx (ThemeProvider via next-themes → useTheme available client-side).
+   283→   283→- Investigated cold-start 401 race via dev.log tail: confirmed REAL race (not stale-log artifact). Pattern repeats on every cold load:
+   284→   284→    GET /api/session 200 in 12ms        (Set-Cookie: implex_session_emp=…)
+   285→   285→    GET /api/notifications 401 in 8ms   ← dashboard mount fired before cookie jar committed
+   286→   286→    GET /api/overview 401 in 7ms
+   287→   287→    GET /api/notifications 401 ×N       ← NotificationCenter polling keeps hitting 401 until manual refresh
+   288→   288→  Root cause: page.tsx awaits /api/session (which 200s + sets cookie), then setData → dashboard mounts → its useEffects fire /api/overview + /api/notifications immediately. In dev/HMR the browser sometimes dispatches those requests before the Set-Cookie is fully applied to the cookie jar → 401 flash, dashboard stuck on empty/error state.
+   289→   289→- Per task constraints (do NOT refactor dashboards), the robust fix is the new apiFetch helper, available for any future fetch site to opt into. page.tsx itself is left structurally unchanged except for the indigo→emerald color fix (the session-fetch flow there is already correct: setData triggers the re-render where the dashboard mounts with the now-set cookie — the residual race is exactly what apiFetch would heal once adopted).
+   290→   290→
+   291→   291→- JOB 1 — created src/lib/api.ts:
+   292→   292→  - `apiFetch<T>(input, init?)`: same-origin fetch; on 401 AND `!sessionEnsured`, transparently bootstraps the session via `GET /api/session` then retries the original request exactly once. Throws `ApiError` (status + body snippet) on any non-2xx. The module-scoped `sessionEnsured` flag guarantees no retry loop — a second 401 after bootstrap is a real auth failure.
+   293→   293→  - `ApiError` class (status, body, message). `__resetSessionEnsuredForTests` test-only escape hatch.
+   294→   294→  - `"use client"` directive; no `any`; uses `credentials: "same-origin"` so the cookie jar is consulted on every retry.
+   295→   295→
+   296→   296→- JOB 1 — fixed indigo violation in src/app/page.tsx LoadingScreen + Spinner:
+   297→   297→  - gradient: `from-indigo-500 to-violet-600` → `from-emerald-500 to-teal-600`
+   298→   298→  - "Edu" accent: `text-indigo-600` → `text-emerald-600`
+   299→   299→  - spinner stroke: `text-indigo-500` → `text-emerald-500`
+   300→   300→  - Structure unchanged; no other edits to page.tsx.
+   301→   301→
+   302→   302→- JOB 2 — created src/components/hrms/CommandPalette.tsx ("use client"):
+   303→   303→  - Controlled `Dialog` wrapping a `Command` (cmdk). Props: `{ open, onOpenChange, navItems, onNavigate }`. Return type `React.JSX.Element` (React 19 dropped the global JSX namespace — same convention as W1-C BroadcastComposer).
+   304→   304→  - DialogContent className: `top-[15vh] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-2xl` — top-aligned at 15vh on all viewports, max-w-2xl, no padding (Command owns its own internal padding), `showCloseButton={false}` for a clean palette look.
+   305→   305→  - sr-only DialogHeader/Title/Description for a11y (Radix Dialog requires a title).
+   306→   306→  - CommandInput (built-in Search icon) + CommandList (`max-h-[60vh]`) + CommandEmpty ("No results found.").
+   307→   307→  - Groups: "Navigate" (one CommandItem per navItem with Search icon + CornerDownLeft hint; onSelect → onNavigate(id) + close), "Actions" (Toggle theme via `useTheme().setTheme` reading `resolvedTheme` at click — SunMoon icon in emerald accent; Reload page via `window.location.reload()` deferred 0ms so dialog closes first — RefreshCw icon), "Help" (disabled CommandItem with "Press Esc to close" + kbd hint).
+   308→   308→  - cmdk handles arrow/enter/escape natively; fuzzy filtering is built in.
+   309→   309→  - No ⌘K listener inside the component (the spec puts it in TopBar); palette is purely controlled via props to avoid prop-drilling through the dialog portal.
+   310→   310→
+   311→   311→- JOB 2 — modified src/components/hrms/TopBar.tsx:
+   312→   312→  - Removed Popover-based search (Popover/PopoverContent/PopoverTrigger imports) and inline Command imports.
+   313→   313→  - Added `import CommandPalette from "@/components/hrms/CommandPalette"`.
+   314→   314→  - Renamed `searchOpen` → `paletteOpen`. Search trigger button now `onClick={() => setPaletteOpen(true)}` (was PopoverTrigger); kept the `/` kbd hint verbatim per spec.
+   315→   315→  - Added `React.useEffect` registering a global `keydown` listener: `(e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")` → `e.preventDefault()` + `setPaletteOpen(true)`. Listener registered in effect (client-only) → no hydration mismatch; cleanup removes it on unmount.
+   316→   316→  - Renders `<CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} navItems={navItems ?? []} onNavigate={handleNavigate} />` at the end of the header.
+   317→   317→  - Brand, mobile menu, ThemeToggle, NotificationCenter, Separator, RoleSwitcher all untouched.
+   318→   318→
+   319→   319→- Verification: `npx tsc --noEmit 2>&1 | grep -E "page.tsx|TopBar|CommandPalette|api.ts"` → CLEAN (no output / exit 1 from grep = no matches). The only remaining tsc errors in the repo are pre-existing in `examples/websocket/*` and `skills/*` — outside this task's scope.
+   320→   320→- Constraints honored: no dashboard/hrms component edits beyond TopBar; no API route edits; emerald accent only (no indigo/blue); TypeScript strict, no `any`; no tests.
+   321→   321→
+   322→   322→Stage Summary:
+   323→   323→- Files created:
+   324→   324→  - src/lib/api.ts (apiFetch<T> + ApiError + sessionEnsured bootstrap-on-401 logic)
+   325→   325→  - src/components/hrms/CommandPalette.tsx (default export, controlled ⌘K palette)
+   326→   326→- Files modified:
+   327→   327→  - src/app/page.tsx (LoadingScreen + Spinner: indigo → emerald; structure unchanged)
+   328→   328→  - src/components/hrms/TopBar.tsx (Popover search → CommandPalette; global ⌘K listener)
+   329→   329→- tsc clean for all four target files. No tests written.
+   330→   330→- ⌘K behavior: pressing ⌘K (mac) or Ctrl+K (win/linux) anywhere, OR clicking the TopBar search button, opens the palette at 15vh from the top with three groups (Navigate / Actions / Help). cmdk handles fuzzy search + arrow keys + Enter (select) + Esc (close). Navigation items close the palette and call onNavigate; Toggle theme flips next-themes light↔dark; Reload page closes then reloads. No hydration warnings (listener in useEffect, palette content only renders when open).
+   331→   331→
+   332→   332→---
+   333→   333→Task ID: W2-D
+   334→   334→Agent: general-purpose
+   335→   335→Task: Profile API + ProfileSheet + RoleSwitcher wiring + apiFetch in NotificationCenter
+   336→   336→
+   337→   337→Work Log:
+   338→   338→- Read worklog.md, src/lib/types.ts (SessionUser), src/lib/auth/session.ts (getSession/hasPermission), src/lib/db.ts, src/lib/api.ts (apiFetch helper from W1-A), src/components/hrms/RoleSwitcher.tsx, src/components/hrms/NotificationCenter.tsx, src/components/hrms/file-upload.tsx (AvatarUpload + FileUpload), the shadcn primitives (dialog/sheet/input/textarea/label/button/avatar/badge/separator), the prisma schema (Profile/Employee/User/UserRole/Role/Department/AuditLog), and existing audit + leave/[id] + employees/[id] routes to align with established patterns (audit-log shape "10.0.0.?", JSON-stringified afterState, etc.).
+   339→   339→- JOB 1 — Created src/app/api/profile/route.ts:
+   340→   340→  - GET: requires session; loads employee (by session.employeeId) → user → profile → userRoles.role + department; returns the full ProfileResponse shape (displayName/email/phone/bio/avatarUrl/employeeCode/designation/departmentName/joinDate ISO/roles[]). Falls back displayName → email if profile missing.
+   341→   341→  - PATCH: requires session; accepts ONLY { displayName?, phone?, bio?, avatarUrl? }. Strict runtime type validation per field (string|null). Empty trimmed displayName → 400. Empty body / non-editable-only body → 400 "no editable fields provided". Email/employeeCode/designation/department etc. are NOT touched. Defensive upsert on Profile (so it works even if a Profile row is somehow missing). Writes an audit log (action "profile.update", targetTable "profiles", targetId = profile id, afterState = JSON of changed fields only, ipAddress "10.0.0.?"). Re-fetches the joined employee and returns the same shape as GET.
+   342→   342→  - Shared FULL_INCLUDE const + Prisma.EmployeeGetPayload utility type for serializeProfile, so the serializer can't drift from the query.
+   343→   343→- JOB 2 — Created src/components/hrms/ProfileSheet.tsx ("use client", default export):
+   344→   344→  - Sheet side="right", titled "My Profile" with description.
+   345→   345→  - On open (and on Retry): fetches GET /api/profile via apiFetch; Skeleton blocks while loading; dedicated error state with Retry button (increments retryKey → re-fires effect).
+   346→   346→  - Top: AvatarUpload (from @/components/hrms/file-upload) with currentUrl + displayName. onUploaded patches /api/profile { avatarUrl: path } immediately, shows toast "Photo updated", updates local avatar state optimistically, shows a small spinner badge on the avatar while the PATCH is in flight. Subtle hint "Applies everywhere on next reload." under the avatar.
+   347→   347→  - Editable form: Display Name (Input, maxLength 120), Phone (Input, inputMode tel), Bio (Textarea rows=3, maxLength 500). Save button (emerald accent: bg-emerald-600 hover:bg-emerald-700, dark variants) — disabled while saving/loading or if trimmed displayName is empty; spinner + "Saving…" while in flight; on success toast "Profile saved", sheet stays open; on error toast "Could not save profile".
+   348→   348→  - Read-only "Account details" section (Separator above): Email, Employee code (mono), Designation, Department, Join date (formatted via formatDate), Roles (Badges).
+   349→   349→  - No react-hook-form — pure useState. Return type React.JSX.Element (React 19). Emerald accent only.
+   350→   350→- JOB 3 — Modified src/components/hrms/RoleSwitcher.tsx:
+   351→   351→  - Added `User` icon import and `import ProfileSheet from "@/components/hrms/ProfileSheet"`.
+   352→   352→  - Added `const [profileOpen, setProfileOpen] = React.useState(false)`.
+   353→   353→  - Inserted a "View profile" DropdownMenuItem (User icon in primary color, gap-2 py-2) right after the user-info DropdownMenuLabel + DropdownMenuSeparator and BEFORE the candidate list ScrollArea, with a trailing DropdownMenuSeparator to keep the role list visually distinct. onSelect={() => setProfileOpen(true)} — the dropdown closes by default and the sheet opens.
+   354→   354→  - Rendered <ProfileSheet open={profileOpen} onOpenChange={setProfileOpen} /> as a sibling of DropdownMenuContent inside the DropdownMenu (so it participates in the component tree without affecting dropdown layout).
+   355→   355→  - All role-switching behavior unchanged (handleSwitch, grouped candidates, switching spinner, page reload).
+   356→   356→- JOB 4 — Modified src/components/hrms/NotificationCenter.tsx:
+   357→   357→  - Replaced `import { cn } from "@/lib/utils"` adjacency with `import { apiFetch } from "@/lib/api"` (apiFetch already imports ApiError class but we only need apiFetch here).
+   358→   358→  - fetchFeed: was `fetch("/api/notifications", { cache: "no-store" })` + manual `if (!res.ok) return` + `(await res.json()) as FeedResponse`. Now `await apiFetch<FeedResponse>("/api/notifications")` — apiFetch transparently bootstraps the session on 401 and retries once, then throws on non-ok. The catch stays silent (UI shows previous good state / empty). setLoading(false) still fires in finally.
+   359→   359→  - handleMarkAll: was `fetch("/api/notifications", { method: "PATCH" })` + `if (res.ok) {…}`. Now `await apiFetch<{ ok: boolean }>("/api/notifications", { method: "PATCH" })` followed by the same optimistic local update (items.map → readAt now, setUnread(0)). Added catch (silent — next 30s poll resyncs) so a failure no longer leaves the marking spinner stuck. The `finally { setMarking(false) }` stays.
+   360→   360→  - All UI/behavior (bell + badge + dropdown + 30s interval + Skeleton rows + empty state + relative time formatting) is identical.
+   361→   361→- Verified `npx tsc --noEmit 2>&1 | grep -E "profile|ProfileSheet|RoleSwitcher|NotificationCenter"` is empty (clean) — and the broader run only flags pre-existing errors in /examples and /skills (unrelated to the app).
+   362→   362→- curl quick-tests against the running dev server (with a bootstrapped session cookie):
+   363→   363→  - GET /api/profile → 200 with the full shape: {"displayName":"Priya Sharma","email":"priya.sharma@implexedu.in","phone":"+91 98200 11223","bio":"HR lead with 8 yrs in ed-tech people ops.","avatarUrl":null,"employeeCode":"IMP-HR-001","designation":"HR Manager","departmentName":"Human Resources","joinDate":"2024-08-18T09:00:00.000Z","roles":["hr_admin"]}
+   364→   364→  - PATCH /api/profile {displayName,phone,bio} → 200 with updated values mirrored back.
+   365→   365→  - PATCH /api/profile {avatarUrl:"/uploads/avatar/test-avatar-123.png"} → 200, avatarUrl persisted, audit log entry created (action "profile.update", targetTable "profiles", targetId "prof-user-priya", afterState "{\"avatarUrl\":\"/uploads/avatar/test-avatar-123.png\"}").
+   366→   366→  - PATCH {displayName:"   "} → 400 {"error":"displayName cannot be empty"}.
+   367→   367→  - PATCH {email, employeeCode} (non-editable only) → 400 {"error":"no editable fields provided"} — confirms the HR-managed fields are not writable through this route.
+   368→   368→  - Audit log via GET /api/audit confirms two profile.update rows with correct afterState JSON for both the multi-field and avatarUrl-only patches.
+   369→   369→  - Restored the demo profile back to seed values via PATCH after testing.
+   370→   370→
+   371→   371→Stage Summary:
+   372→   372→- Files created:
+   373→   373→  - src/app/api/profile/route.ts (GET + PATCH)
+   374→   374→  - src/components/hrms/ProfileSheet.tsx (default export, "use client")
+   375→   375→- Files modified:
+   376→   376→  - src/components/hrms/RoleSwitcher.tsx (User icon import, ProfileSheet import, profileOpen state, "View profile" menu item, ProfileSheet render)
+   377→   377→  - src/components/hrms/NotificationCenter.tsx (apiFetch swap for both the polling GET and the mark-all-read PATCH)
+   378→   378→- tsc clean for all four target files (grep for profile|ProfileSheet|RoleSwitcher|NotificationCenter returns no matches).
+   379→   379→- Constraints honored: only existing shadcn components + lucide-react used; emerald accent only (no indigo/blue); TypeScript strict, no `any`; React.JSX.Element return types; no tests; no dashboard files touched; no API routes other than api/profile/route.ts touched.
+   380→   380→
+   381→   381→---
+   382→   382→Task ID: W2-E
+   383→   383→Agent: general-purpose
+   384→   384→Task: Wire teacher notes upload, leave attachments, HR broadcast section; extend teacher-reports + leave API routes
+   385→   385→
+   386→   386→Work Log:
+   387→   387→- Read worklog.md, HrDashboard.tsx, TeacherDashboard.tsx, MarketingDashboard.tsx, api/leave/route.ts, api/teacher-reports/route.ts, file-upload.tsx (FileUpload — category/accept/label/onUploaded/onError/buttonText props), BroadcastComposer.tsx (default export, onSent? prop), shared.tsx (SectionHeader/StatusBadge/format*).
+   388→   388→- JOB 1 — teacher-reports API: Added `notesUrl?: string | null` to the inline `classes.map((c: {...}) => ...)` parameter type, added `notesUrl: c.notesUrl ?? null` to the create payload, and added `notesUrl: c.notesUrl` to the GET handler's per-class mapping.
+   389→   389→- JOB 2 — leave API: Destructured `attachmentPath` from POST body, persisted it (string-trim guard, else null) in `db.leaveRequest.create({ data: { ... } })`, and added `attachmentPath: l.attachmentPath` to the GET handler's item mapping.
+   390→   390→- JOB 3 — TeacherDashboard: Added `FileText`, `Paperclip` to lucide imports; imported `FileUpload` from `@/components/hrms/file-upload`; added `notesUrl: string | null` to `TeacherClass` (history view shape) and `ClassFormRow` (form state) types + `EMPTY_CLASS_ROW`; added `notesUrl: c.notesUrl ?? null` to the POST payload. Placed a `<FileUpload category="report" accept=".pdf,.txt" buttonText="Notes" onUploaded={(path) => updateRow(i, { notesUrl: path })} />` inside each class row grid (next to the Assignments-checked checkbox, sm/lg col-span-2 to occupy the trailing 2 cols), with a small emerald-tinted "selected notes" chip + Remove button below the row when notesUrl is set. In the History Sheet detail, added a "Notes" table column that renders `<a href={c.notesUrl} target="_blank" rel="noreferrer">View notes</a>` (with FileText icon) when present, else "—".
+   391→   391→- JOB 4 — Leave attachment in Teacher + Marketing leave request forms:
+   392→   392→  - TeacherDashboard LeaveSection: Added `attachmentPath` state (string | null), `attachmentPath` in the POST /api/leave body, reset to null on success, plus a `<FileUpload category="leave" accept=".pdf,image/*" label="Attachment (optional)" onUploaded={setAttachmentPath} />` between Reason and Submit with an emerald-tinted chip showing the path + Remove button when set. Also added `attachmentPath: string | null` to the local `LeaveItem` type so the API response shape matches.
+   393→   393→  - MarketingDashboard: Discovered MarketingDashboard has NO Leave section (only Overview/Daily Report/Leads/Deals/Follow-ups — confirmed via worklog Task 4 + grep). Since the spec mandates modifying MarketingDashboard's Leave section request form, added a minimal Leave section: imported `Plane`, `Send`, `Paperclip` from lucide; imported `FileUpload`; imported `Table/TableBody/TableCell/TableHead/TableHeader/TableRow` (MarketingDashboard didn't previously use the table primitives); imported `formatDateTime` from shared; added `LeaveItem`/`LeaveResponse` types mirroring the API; added a `{ id: "leave", label: "Leave", icon: <Plane /> }` nav item to MARKETING_NAV; added a `LeaveSection()` component (request form: leave-type Select, start/end date Inputs, reason Textarea, FileUpload with category="leave" accept=".pdf,image/*" label="Attachment (optional)" onUploaded={setAttachmentPath}, emerald chip + Remove when set, Submit button → POST /api/leave with attachmentPath in body, reset all state including attachmentPath on success; plus a "My Requests" Card with a Table mirroring TeacherDashboard's columns: Type/Start/End/Days/Status/Approver/Decided At, with EmptyState when none, ErrorState on error, Skeleton on loading); added `case "leave": return <LeaveSection />;` to renderSection switch.
+   394→   394→- JOB 5 — HR leave view: Added `Megaphone`, `Paperclip` to lucide imports; added `attachmentPath: string | null` to the local `LeaveItem` type (and `notesUrl: string | null` to the local `TeacherClass` type so it matches the extended teacher-reports API response). In the Leave section pending cards, after the Reason paragraph, render `<a href={l.attachmentPath} target="_blank" rel="noreferrer">View attachment</a>` (Paperclip icon, emerald-tinted) when attachmentPath is present. In the "All" tab table, added an "Attachment" column (header + cell) that renders the same Paperclip-link when present, else "—".
+   395→   395→- JOB 6 — HR broadcast section: Imported `BroadcastComposer` (default export) from `@/components/hrms/BroadcastComposer`. Added `{ id: "announce", label: "Announce", icon: <Megaphone /> }` to HR_NAV between "audit" and "settings" (so the TopBar/Sidebar navItems derived from HR_NAV automatically pick it up). Added `case "announce":` to the renderSection switch that wraps the composer: `<SectionHeader title="Broadcast" description="Send announcements to roles or departments" />` followed by `<BroadcastComposer onSent={() => { /* optionally refetch notifications */ }} />`.
+   396→   396→- Verification: `npx tsc --noEmit 2>&1 | grep -E "HrDashboard|TeacherDashboard|MarketingDashboard|leave/route|teacher-reports/route"` → no matches (clean). `npx eslint` on all five modified files → exit 0, no errors/warnings. Only the pre-existing errors in examples/websocket/* and skills/* remain (unrelated to this task).
+   397→   397→- Constraints honored: surgical edits via Edit tool (no section rewrites — the only "new" code is the Marketing LeaveSection which was required because MarketingDashboard had no Leave section to modify); only existing shadcn primitives + lucide-react used; emerald accent only; TypeScript strict, no `any`; did not touch RoleSwitcher/NotificationCenter/TopBar/page.tsx/file-upload/BroadcastComposer or any API route other than the two specified.
+   398→   398→
+   399→   399→Stage Summary:
+   400→   400→- Files modified:
+   401→   401→  - src/app/api/teacher-reports/route.ts (notesUrl in GET + POST)
+   402→   402→  - src/app/api/leave/route.ts (attachmentPath in GET + POST)
+   403→   403→  - src/components/hrms/TeacherDashboard.tsx (FileText+Paperclip imports, FileUpload import, TeacherClass.notesUrl, ClassFormRow.notesUrl, EMPTY_CLASS_ROW.notesUrl, per-class FileUpload for notes, notesUrl in POST payload, Notes column in History Sheet detail table, attachmentPath in LeaveItem type + LeaveSection state + POST body + reset)
+   404→   404→  - src/components/hrms/MarketingDashboard.tsx (Plane+Send+Paperclip imports, Table primitives import, FileUpload import, formatDateTime import, LEAVE_TYPES const, LeaveItem+LeaveResponse types, `leave` nav item, `case "leave"` in renderSection, new LeaveSection component with attachment upload + own-requests table, attachmentPath in POST body + reset)
+   405→   405→  - src/components/hrms/HrDashboard.tsx (Megaphone+Paperclip imports, BroadcastComposer import, TeacherClass.notesUrl + LeaveItem.attachmentPath type updates, Announce nav item, Announce renderSection case, View attachment link in pending cards + Attachment column in All table)
+   406→   406→- tsc clean for all five target files (grep returns nothing). eslint clean on all five files.
+   407→   407→- Challenge: MarketingDashboard had no pre-existing Leave section (the spec assumed it did). Resolved by adding a self-contained LeaveSection component + nav item + switch case (mirrors TeacherDashboard's pattern but without the balances card since Marketing doesn't fetch /api/settings), keeping the change scoped to a single new section rather than rewriting existing sections.
+   408→   408→

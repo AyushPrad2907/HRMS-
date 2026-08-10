@@ -1,0 +1,302 @@
+     1→     1→# Implex Edu HRMS — Worklog
+     2→     2→
+     3→     3→Project: Building a comprehensive HRMS based on the SRS/TDD document.
+     4→     4→Constraints: single `/` route, Prisma+SQLite, API routes (not server actions), shadcn/ui.
+     5→     5→
+     6→     6→---
+     7→     7→Task ID: 1
+     8→     8→Agent: main
+     9→     9→Task: Design & push Prisma schema for all HRMS entities
+    10→    10→
+    11→    11→Work Log:
+    12→    12→- Read SRS/TDD document (868 lines) covering 21 sections
+    13→    13→- Adapting Postgres/Supabase schema to SQLite (no RLS/jsonb/enums; String IDs, JSON-as-text)
+    14→    14→- Defining all entities: User, Profile, Employee, Department, Role, Permission, RolePermission, UserRole, Attendance, Holiday, TeacherReport, TeacherClass, MarketingReport, MarketingMeeting, MarketingCall, MarketingLead, MarketingFollowup, MarketingDeal, LeaveRequest, Notification, AuditLog, ActivityLog, Settings
+    15→    15→
+    16→    16→Stage Summary:
+    17→    17→- Schema file: prisma/schema.prisma
+    18→    18→- Will run `bun run db:push` after writing schema
+    19→    19→
+    20→    20→---
+    21→    21→Task ID: 3-audit
+    22→    22→Agent: general-purpose
+    23→    23→Task: Create audit API route
+    24→    24→
+    25→    25→Work Log:
+    26→    26→- Created directory and wrote audit route.ts
+    27→    27→
+    28→    28→Stage Summary:
+    29→    29→- File created at src/app/api/audit/route.ts
+    30→    30→
+    31→    31→---
+    32→    32→Task ID: 3-api-extra
+    33→    33→Agent: general-purpose
+    34→    34→Task: Create analytics + settings API routes and shared types file
+    35→    35→
+    36→    36→Work Log:
+    37→    37→- Read worklog, session.ts, db.ts, overview/route.ts, audit/route.ts, and prisma/schema.prisma to understand patterns and permission catalog (analytics:view_org, settings:manage, etc.).
+    38→    38→- Inspected prisma/seed.ts to confirm date storage pattern (setHours-based local dates) and permission names.
+    39→    39→- Created src/lib/types.ts with SessionUser / Candidate / Kpi shared types (mirror of session.ts SessionUser, safe for client import without pulling in next/headers).
+    40→    40→- Created src/app/api/analytics/route.ts: GET, session + analytics:view_org permission gate. Fetches last-14-day attendance, teacher/marketing reports, leads, deals, employees, leave requests, teacher_classes, marketing_calls via Promise.all. Aggregates in JS (SQLite-friendly) into attendanceTrend, reportTrend, marketingFunnel (byStatus + dealsByStage + revenueWon + pipelineValue), departmentHeadcount, topPerformers (top 5 combined, teachers by students-reached, marketers by calls), and leaveStats (pending/approved/rejected + byType). Uses local YYYY-MM-DD formatDate so buckets align with setHours-based seeded dates. Returns numbers only.
+    41→    41→- Created src/app/api/settings/route.ts: GET (any authenticated user) returns { items: [{ key, value }] } with value JSON-parsed from stored string. PUT requires settings:manage, accepts { key, value } (value defaults to null when undefined), upserts Settings row, writes AuditLog (action: "settings.update", targetTable: "settings", beforeState/afterState JSON), and returns the upserted { key, value }.
+    42→    42→- Ran `npx tsc --noEmit` — no errors in any of the three new files (pre-existing errors in examples/, skills/, and an unrelated leave/route.ts issue are not from this task).
+    43→    43→- Ran `npx eslint` on the three new files — clean.
+    44→    44→
+    45→    45→Stage Summary:
+    46→    46→- Created src/lib/types.ts, src/app/api/analytics/route.ts, src/app/api/settings/route.ts
+    47→    47→
+    48→    48→---
+    49→    49→Task ID: 4-foundation
+    50→    50→Agent: general-purpose
+    51→    51→Task: Build shared components, app shell, top bar, sidebar, footer, role switcher, notifications, theme toggle, layout & globals theme updates
+    52→    52→
+    53→    53→Work Log:
+    54→    54→- Read worklog, src/lib/types.ts, src/app/layout.tsx, src/app/globals.css, src/components/ui/sonner.tsx, package.json, and key shadcn primitives (button, card, badge, dropdown-menu, popover, command, sheet, avatar, separator, scroll-area, input) to confirm APIs and the SessionUser/Candidate shapes. Confirmed next-themes, framer-motion, recharts, lucide-react, sonner are installed.
+    55→    55→- Inspected /api/session and /api/notifications routes to match request/response shapes for RoleSwitcher (POST {employeeId} then reload) and NotificationCenter (GET {items,unread}, PATCH to mark all read).
+    56→    56→- MODIFIED src/app/globals.css: rewrote :root and .dark --primary / --primary-foreground / --sidebar-primary / --sidebar-primary-foreground / --ring / --sidebar-ring to emerald oklch values (0.55 0.15 160 light, 0.7 0.15 160 dark). Replaced chart-1..5 with a harmonious emerald/teal/amber/rose/violet palette in oklch (chart-1 = emerald). Added `html, body { height: 100%; }` to base layer, plus a `.no-scrollbar` utility and a custom emerald-tinted scrollbar (web + Firefox, light + dark, with hover state).
+    57→    57→- CREATED src/components/theme-provider.tsx — thin "use client" wrapper around next-themes' ThemeProvider so the server layout can use it.
+    58→    58→- MODIFIED src/app/layout.tsx — wrapped children in <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>, swapped the old radix Toaster for the Sonner <Toaster richColors position="top-right" />, updated metadata to title "Implex Edu HRMS" / description "Human Resource Management System for Implex Edu", kept the Geist + Geist_Mono fonts and suppressedHydrationWarning on <html>.
+    59→    59→- CREATED src/components/hrms/shared.tsx — "use client" utilities: KpiCard (top label + icon, big tabular value, delta with ArrowUpRight/ArrowDownRight colored emerald/rose + hint), SectionHeader (title + description + action, responsive stack→row), EmptyState (centered card with icon, title, description, action), StatusBadge (prettifies snake_case, on_leave_emp → "On Leave"; STATUS_STYLES map covers attendance/leave/employee-status/lead/deal states with emerald/rose/amber/sky/violet tints), formatDate (12 Oct 2025), formatDateTime (12 Oct, 9:30 AM), formatCurrency (₹1,20,000 via en-IN INR), formatRelativeTime (2h ago / 3d ago). Re-exports Badge for convenience.
+    60→    60→- CREATED src/components/hrms/ThemeToggle.tsx — "use client" ghost icon button. Uses useTheme from next-themes, mounts icon in useEffect to avoid hydration mismatch, toggles Sun/Moon.
+    61→    61→- CREATED src/components/hrms/RoleSwitcher.tsx — "use client". DropdownMenu triggered from the TopBar avatar. Header shows current user (name, designation, department, mono employeeCode, role badges). Body is a ScrollArea with candidates grouped by their first role. Active candidate is marked with a Check icon. Selecting POSTs to /api/session with {employeeId} and calls window.location.reload() to refresh server-side session.
+    62→    62→- CREATED src/components/hrms/NotificationCenter.tsx — "use client". Bell icon button with an unread-count pill (primary bg). Fetches /api/notifications on mount and every 30s via setInterval. Dropdown shows feed items (unread dot, title, 2-line body, relative time). "Mark all read" button PATCHes /api/notifications and locally flips unread→0. Shows skeletons while loading and an empty state when there are no items. Uses formatRelativeTime from shared.
+    63→    63→- CREATED src/components/hrms/Sidebar.tsx — "use client". Pure nav list (no chrome). Exports NavItem type and a default Sidebar({items, active, onSelect, className}). Each item is a ghost Button; active item gets bg-primary/10 text-primary font-medium plus a 0.5-unit emerald left accent bar. Parent dashboard decides whether to wrap it in a desktop aside or mobile Sheet.
+    64→    64→- CREATED src/components/hrms/Footer.tsx — server component. Sticky footer (mt-auto, border-t, bg-card/50 backdrop-blur). Left: "© 2025 Implex Edu — HRMS v1.0". Right: "Built with Next.js 16 · Prisma · shadcn/ui" + an animated emerald "System operational" status dot (ping + solid).
+    65→    65→- CREATED src/components/hrms/TopBar.tsx — "use client". Sticky (top-0 z-30 border-b bg-background/80 backdrop-blur) header. Left: md:hidden Menu button that dispatches a custom `implex-open-sidebar` event the dashboard listens for; brand (emerald square + "Implex Edu" + HRMS badge, hidden on xs). Center: search trigger styled as a muted input-like button that opens a Popover wrapping a cmdk Command palette listing navItems (each item value = `${label} ${id}` so it matches by label or id); selecting calls onNavigate. Right: ThemeToggle, NotificationCenter, vertical Separator, RoleSwitcher.
+    66→    66→- CREATED src/components/hrms/AppShell.tsx — "use client". Wraps TopBar + <main class="flex flex-1 flex-col">{children}</main> + Footer in a `min-h-screen flex flex-col bg-background` root. The dashboard rendered as children owns its own sidebar+content flex layout.
+    67→    67→- Ran `npx tsc --noEmit` — fixed three `Cannot find namespace 'JSX'` errors (React 19 dropped the global JSX namespace) by removing the explicit `JSX.Element` return type from AppShell/Sidebar/TopBar (TypeScript now infers it). Final pass: only pre-existing errors remain (examples/websocket/* missing socket.io modules, skills/* SDK type drift, src/app/api/leave/route.ts userRoles filter — all noted in prior worklog). None in any file this task touched.
+    68→    68→- Ran `npx eslint` on all new/modified files — clean (only a benign "file ignored" warning for globals.css since eslint doesn't lint CSS).
+    69→    69→
+    70→    70→Stage Summary:
+    71→    71→- Modified: src/app/globals.css, src/app/layout.tsx
+    72→    72→- Created: src/components/theme-provider.tsx, src/components/hrms/shared.tsx, src/components/hrms/ThemeToggle.tsx, src/components/hrms/RoleSwitcher.tsx, src/components/hrms/NotificationCenter.tsx, src/components/hrms/Sidebar.tsx, src/components/hrms/Footer.tsx, src/components/hrms/TopBar.tsx, src/components/hrms/AppShell.tsx
+    73→    73→- Key decisions: (1) Emerald-only accent palette in oklch; chart-2..5 are teal/amber/rose/violet for harmony. (2) Sidebar is a pure nav list — the dashboard composes desktop aside + mobile Sheet around it (so TopBar's mobile menu button just dispatches `implex-open-sidebar` rather than drilling a callback). (3) TopBar's search uses a Popover-wrapped cmdk Command (not a full Dialog) to keep it lightweight and inline. (4) RoleSwitcher POSTs then `window.location.reload()` (server components need a refresh to re-fetch session). (5) Footer is a server component (no interactivity). (6) NotificationCenter polls every 30s and gracefully degrades on fetch error.
+    74→    74→- TypeScript: `npx tsc --noEmit` clean for all task files (pre-existing errors elsewhere are unchanged).
+    75→    75→- Next agent can now build dashboards by wrapping their content in <AppShell user={...} candidates={...} navItems={...} onNavigate={...}> and rendering a desktop <aside class="hidden md:flex"> + mobile <Sheet> around <Sidebar>, listening for the `implex-open-sidebar` window event to open the Sheet.
+    76→    76→
+    77→    77→---
+    78→    78→Task ID: 5-hr
+    79→    79→Agent: general-purpose
+    80→    80→Task: Build HrDashboard.tsx with 8 sections
+    81→    81→
+    82→    82→Work Log:
+    83→    83→- Read worklog, src/lib/types.ts, shared.tsx (KpiCard/SectionHeader/EmptyState/StatusBadge/format*), AppShell/TopBar/Sidebar/Footer, the shadcn primitives (card, button, table, sheet, dialog, alert-dialog, dropdown-menu, tabs, select, input, label, textarea, skeleton, avatar, badge), package.json, prisma/schema.prisma, and every API route the dashboard talks to (overview, employees + [id], attendance, leave + [id], teacher-reports, marketing-reports, analytics, audit, departments, roles, holidays, settings) to lock down response shapes.
+    84→    84→- Created src/components/hrms/HrDashboard.tsx — single "use client" file, default export `HrDashboard({ user, candidates })`. Internal `section` state (default "overview") switches between eight sub-components. Wraps in AppShell, renders a desktop aside (hidden md:flex w-60) housing <Sidebar items={HR_NAV} active={section} onSelect={setSection} />, plus a mobile <Sheet side="left"> that opens on the custom `implex-open-sidebar` window event (listened via useEffect) and renders the same Sidebar with onSelect that also closes the sheet.
+    85→    85→- HR_NAV (8 items): overview/employees/attendance/leave/reports/analytics/audit/settings with lucide icons LayoutDashboard/Users/CalendarCheck/Plane/FileText/BarChart3/ScrollText/Settings.
+    86→    86→- Local helpers: shortDate (d MMM for chart ticks), toDateInputValue (ISO→YYYY-MM-DD for date input), initials (avatar fallback), prettyJson (audit afterState pretty-print), useFetch<T> hook (url|null, stale-data-preserving refetch, error state), ChartCard wrapper, SectionSkeleton, ErrorState. COLORS palette = ["#10b981","#0ea5e9","#f59e0b","#ef4444","#8b5cf6"] for recharts SVG fills.
+    87→    87→- Sections implemented:
+    88→    88→  1. Overview — fetches /api/overview; 4 KpiCards in responsive grid; Quick Actions card with 3 buttons (Add Employee/Review Leave/View Reports → setSection); Recent Activity list with avatar dot, actor+activity, formatRelativeTime.
+    89→    89→  2. Employees — fetches /api/employees?q=&dept=&status= (300ms debounced search) plus /api/departments and /api/roles for filter/form options. Filters card (search Input + dept Select + status Select using "__all" sentinel). Table in max-h-[70vh] overflow-y-auto with sticky header; columns Code (mono), Name (avatar+name+email), Designation, Department, Manager, Status (StatusBadge), Roles (Badges), Actions (edit dropdown) — actions only shown when canEdit. Add/Edit Sheet (right, sm:max-w-md) with controlled form (displayName, email, code, dept/role Selects, joinDate date Input, designation, phone, bio Textarea); POST /api/employees or PATCH /api/employees/[id]; toast on success/error; refetch after. Delete via AlertDialog (offboard) → DELETE. Add button only when canCreate.
+    90→    90→  3. Attendance — fetches /api/attendance?days=14; status filter Select; table with employee, dept, date, status badge, check-in/out (formatDateTime), note; Override button per row when canOverride opens a Dialog with status Select (present/absent/half_day/on_leave) + note Input → POST /api/attendance {action:"override", employeeId, status, note}; toast + refetch. Sticky header + max-h scroll.
+    91→    91→  4. Leave — fetches /api/leave; Tabs Pending (cards with employee, type, dates, days, reason, Approve/Reject buttons when canApprove → PATCH /api/leave/[id] {decision}; toast + refetch) and All (table with employee, type, dates, days, status badge, approver, decidedAt).
+    92→    92→  5. Reports — fetches /api/teacher-reports + /api/marketing-reports in parallel (two useFetch calls); merges into a UnifiedReport[] tagged with type, sorted by reportDate desc. Tabs All/Teacher/Marketing filter the merged list. Table: Date, Type (emerald/violet Badge), Employee, Summary (teacher "{n} classes · {students} students"; marketing "{calls} calls · {meetings} meetings"), Notes. Row click opens a right Sheet showing notes + classes list (teacher) or calls + meetings lists (marketing).
+    93→    93→  6. Analytics — fetches /api/analytics; 2-col grid of ChartCards: Attendance Trend stacked BarChart (present/emerald, absent/rose, onLeave/sky, halfDay/amber, X=shortDate), Reports Trend LineChart (teacher emerald + marketing violet), Marketing Funnel BarChart (new/contacted/qualified/lost/converted with per-bar Cell coloring), Department Headcount horizontal (layout=vertical) BarChart. Second row: Top Performers ordered list (rank badge, name, role+metricLabel, metric) and Leave Stats card with PieChart (byType, only non-zero slices) + 3 tone stat boxes (Pending amber / Approved emerald / Rejected rose) + 4 micro stats (Revenue Won, Pipeline, Deals Won, Deals Lost — formatCurrency for INR). All ResponsiveContainer height={260} (220 for pie).
+    94→    94→  7. Audit Log — fetches /api/audit; search Input filters by action/actor/targetTable; table with Timestamp (formatDateTime), Actor, Action (mono Badge), Target (table:last6), After State (collapsible <details> with <pre> prettyJson), IP. Sticky header + max-h scroll.
+    95→    95→  8. Settings — fetches /api/departments, /api/roles, /api/holidays, /api/settings in parallel. Tabs: Departments (read-only table: name, code, description), Roles & Permissions (matrix with sticky left column = roles, columns = permissions, emerald Check icon if granted else muted em-dash, wrapped in max-h overflow-auto for many permissions), Holidays (list of name + formatDate badge), Org Settings (OrgSettingsTab — key-value editor: each row = mono key + Input pre-filled with String(value) + Save button; on save, value parsed as number if numeric else sent as string; PUT /api/settings {key, value}; toast on success/error; refetch on save).
+    96→    96→- Design: emerald accent throughout (via shared.tsx STATUS_STYLES + KpiCard delta + primary-tinted avatar/quick-action chips). Cards use shadcn Card (rounded-xl). Tables wrap in max-h-[70vh] overflow-y-auto with sticky bg-card header. Codes/IDs use font-mono text-xs. Responsive grids collapse to 1 col on mobile. Loading uses <Skeleton> matching layout (SectionSkeleton for tables, KpiCard skeletons, chart skeletons). Empty lists use <EmptyState>. Every mutation toasts success/error via sonner.
+    97→    97→- TypeScript strict, no `any` — defined explicit types for every API response shape inline (Kpi, ActivityItem, Employee, Department, Role, Permission, AttendanceItem, LeaveItem, TeacherClass, MarketingCall, MarketingMeeting, TeacherReportItem, MarketingReportItem, UnifiedReport, AuditItem, Holiday, SettingItem, AnalyticsData + sub-types).
+    98→    98→- Fixed one tsc syntax error during verification: `let value: unknown: string | number = raw;` (invalid double-type-annotation) → `let value: unknown = raw;`.
+    99→    99→- Verification: `npx tsc --noEmit 2>&1 | grep HrDashboard` → no matches (clean). `npx eslint src/components/hrms/HrDashboard.tsx` → exit 0, no errors/warnings. Pre-existing errors elsewhere (examples/websocket, skills/*, src/app/api/leave/route.ts userRoles filter) remain unchanged and unrelated.
+   100→   100→
+   101→   101→Stage Summary:
+   102→   102→- File created: src/components/hrms/HrDashboard.tsx (~2300 lines, single "use client" component with 8 inline section sub-components + helpers).
+   103→   103→- Sections: Overview, Employees (CRUD via Sheet + AlertDialog), Attendance (override via Dialog), Leave (Tabs + approve/reject), Reports (parallel fetch + merge + Sheet detail), Analytics (5 recharts charts + performers list + leave pie/stats), Audit Log (search + collapsible JSON), Settings (4 tabs incl. roles×permissions matrix and key-value org settings editor).
+   104→   104→- All API URLs and response shapes verified against actual route.ts implementations.
+   105→   105→- No tsc/eslint errors in the new file. Did not modify any other file. Did not create page.tsx.
+   106→   106→
+   107→   107→---
+   108→   108→Task ID: 6-teacher
+   109→   109→Agent: general-purpose
+   110→   110→Task: Build TeacherDashboard.tsx with 5 sections
+   111→   111→
+   112→   112→Work Log:
+   113→   113→- Read worklog, src/lib/types.ts (SessionUser/Candidate), shared.tsx (KpiCard/SectionHeader/EmptyState/StatusBadge/format* + Badge re-export), AppShell.tsx, Sidebar.tsx (NavItem), and the HrDashboard.tsx for the established mobile-Sheet + `implex-open-sidebar` window-event pattern.
+   114→   114→- Inspected every API route the dashboard talks to (overview, teacher-reports GET/POST, attendance GET/POST, leave GET/POST, settings GET) to lock down response shapes. Confirmed teacher overview returns `{role, kpis, attendanceToday:{status,checkIn,checkOut}|null, hasTodayReport}`; teacher-reports POST returns 409 on duplicate; attendance POST supports `check_in`/`check_out`/`override`; leave POST requires leaveType+startDate+endDate+reason and rejects end<start; settings GET returns `{items:[{key,value}]}` with value JSON-parsed (so `leave_balances` value is `{casual,sick,earned,unpaid}`).
+   115→   115→- Confirmed shadcn primitives available: card, button, input, label, textarea, skeleton, checkbox, table, select, sheet. Verified Checkbox uses `checked`/`onCheckedChange` and Select uses `value`/`onValueChange`.
+   116→   116→- Created src/components/hrms/TeacherDashboard.tsx — single "use client" file, default export `TeacherDashboard({ user, candidates })`. Internal `section` state (default "overview") switches between five sub-components. Wraps in AppShell; renders a desktop aside (`hidden md:flex w-60`) housing <Sidebar items={TEACHER_NAV} active={section} onSelect={setSection} />, plus a mobile <Sheet side="left"> opened on the custom `implex-open-sidebar` window event (useEffect listener) and rendering the same Sidebar with onSelect that also closes the sheet.
+   117→   117→- TEACHER_NAV (5 items): overview/report/history/attendance/leave with lucide icons LayoutDashboard/ClipboardList/History/CalendarCheck/Plane.
+   118→   118→- Local helpers: todayISODate (YYYY-MM-DD for date inputs/max), prettifyLeaveType, parseLeaveBalances (reads `leave_balances` from /api/settings items, coerces numeric strings/numbers, defaults to 0s), useFetch<T> hook (stale-data-preserving refetch + error state), ErrorState (EmptyState with ShieldAlert), KpiGridSkeleton, TableSkeleton.
+   119→   119→- Shared AttendanceActionButtons component (used by Overview + Attendance): derives checkedIn/checkedOut from `attendanceToday`; renders "Check In" button when not checked in, "Check Out" button when checked in but not out, and a "Day complete" badge when both done. POSTs `/api/attendance` with `{action}`; toasts success/error; calls `onDone` to trigger parent refetch.
+   120→   120→- Sections implemented:
+   121→   121→  1. Overview — fetches /api/overview; SectionHeader "Welcome, {firstName}" / "Your teaching summary"; 4 KpiCards in responsive grid; two side-by-side cards: Today's Attendance (status badge + check-in/out times + AttendanceActionButtons) and Today's Daily Report (✓ Submitted today + View History button if hasTodayReport, else "Submit today's report" CTA → setSection("report")).
+   122→   122→  2. Daily Report — multi-class submission form; SectionHeader "Daily Report"; Card with: Date input (default today, max today), Notes input (optional), dynamic Classes list (useState array, min 1 row). Each class row is its own Card with Batch/Subject/Topics Covered (sm:col-span-2 on lg)/Students Attended (number) inputs + Assignments Checked checkbox + per-row Remove button (disabled when only 1 row). "Add Class" button appends an empty row. Plain controlled inputs (no react-hook-form). "Submit Report" button validates (all rows must have batch+subject+topics+students>0) → POST /api/teacher-reports `{reportDate, notes, classes}`; on 409 toast "Report already submitted for this date"; on success toast + reset form + setSection("history").
+   123→   123→  3. History — fetches /api/teacher-reports (own); SectionHeader "Report History"; sorts items by reportDate desc; each item is a clickable Card showing date (formatDate), classes-count + students-count Badges, notes (line-clamped), and submittedAt (formatDateTime). Clicking a card opens a right Sheet showing notes block + class details table (batch, subject, topics, students, assignments checked ✓/✗). EmptyState when no reports.
+   124→   124→  4. Attendance — fetches /api/attendance?days=14 (own); SectionHeader "My Attendance"; Today card (3-col grid: Status badge / Check-in / Check-out + AttendanceActionButtons). History table in max-h-[70vh] overflow-y-auto with sticky bg-card header; columns: Date, Status (StatusBadge), Check-in, Check-out, Note.
+   125→   125→  5. Leave — fetches /api/leave (own) + /api/settings (for balances). 3-col grid: Request form card (lg:col-span-2) with Leave Type Select (casual/sick/earned/unpaid), Start/End date inputs (end min=start), Reason Textarea, Submit button → POST /api/leave; validates end >= start + non-empty reason; toast + refetch + reset on success. Balance card: 4 BalanceBox mini stats (Casual/Sick/Earned/Unpaid) parsed from `leave_balances` setting via parseLeaveBalances, skeleton while settings loading. Requests table in max-h-[70vh] overflow-y-auto with sticky header; columns: Type (mono Badge), Start, End, Days, Status (StatusBadge), Approver, Decided At; EmptyState when none.
+   126→   126→- Design: emerald accent throughout (via shared.tsx STATUS_STYLES + primary-tinted icons + BalanceBox). Cards use shadcn Card (rounded-xl) with px-6 py-5 / px-0 py-0 for table wrappers. Tables wrap in max-h-[70vh] overflow-y-auto with sticky bg-card header. Codes/IDs/leave-types use font-mono text-xs. Responsive grids collapse 1-col mobile → multi-col desktop. Loading uses <Skeleton> matching layout (KpiGridSkeleton, TableSkeleton, single-card skeletons). Empty lists use <EmptyState>. Every mutation toasts success/error via sonner.
+   127→   127→- TypeScript strict, no `any` — defined explicit types for every API response shape inline (Kpi, AttendanceToday, OverviewData, TeacherClass, TeacherReportItem, AttendanceItem, LeaveItem, SettingItem, LeaveBalances, ClassFormRow). Settings values are read via `unknown` + runtime narrowing (no `any`).
+   128→   128→- Verification: `npx tsc --noEmit 2>&1 | grep -i TeacherDashboard` → no matches (clean). `npx eslint src/components/hrms/TeacherDashboard.tsx` → exit 0, no errors/warnings. Pre-existing errors elsewhere (examples/websocket, skills/*, src/app/api/leave/route.ts userRoles filter) remain unchanged and unrelated.
+   129→   129→
+   130→   130→Stage Summary:
+   131→   131→- File created: src/components/hrms/TeacherDashboard.tsx (~760 lines, single "use client" component with 5 inline section sub-components + helpers).
+   132→   132→- Sections: Overview (KPIs + attendance card + report CTA), Daily Report (multi-class form with validation + 409 handling), History (clickable cards → Sheet with class details table), Attendance (today card + 14-day history table), Leave (request form + balance mini-stats from settings + requests table).
+   133→   133→- All API URLs and response shapes verified against actual route.ts implementations.
+   134→   134→- No tsc/eslint errors in the new file. Did not modify any other file. Did not create page.tsx.
+   135→   135→
+   136→   136→---
+   137→   137→Task ID: 7-marketing
+   138→   138→Agent: general-purpose
+   139→   139→Task: Build MarketingDashboard.tsx with 5 sections
+   140→   140→
+   141→   141→Work Log:
+   142→   142→- Read worklog, src/lib/types.ts, shared.tsx (KpiCard/SectionHeader/EmptyState/StatusBadge/format*), AppShell/TopBar/Sidebar, prisma/schema.prisma (MarketingLead/MarketingDeal shapes), and every API route the dashboard talks to (overview marketing branch, analytics, settings, leads + [id], deals + [id], followups + [id], marketing-reports POST) to lock down request/response shapes — e.g. /api/deals items do NOT include `stage` (it's the column key), /api/leads POST requires name+source and PATCH accepts {status, createDeal}.
+   143→   143→- Created src/components/hrms/MarketingDashboard.tsx — single "use client" file, default export `MarketingDashboard({ user, candidates })`. Internal `section` state (default "overview") switches between five sub-components. Wraps in AppShell, renders a desktop aside (hidden md:flex w-60) housing <Sidebar items={MARKETING_NAV} active={section} onSelect={setSection} />, plus a mobile <Sheet side="left"> that opens on the custom `implex-open-sidebar` window event (listened via useEffect) and renders the same Sidebar with onSelect that also closes the sheet.
+   144→   144→- MARKETING_NAV (5 items): overview/report/leads/deals/followups with lucide icons LayoutDashboard/ClipboardList/Target/TrendingUp/ListTodo.
+   145→   145→- Local helpers: toDateInputValue (accepts string|Date), todayInputValue, uid (React keys for dynamic rows), useFetch<T> hook (stale-data-preserving refetch, error state), ErrorState, KpiSkeleton. COLORS palette = ["#10b981","#0ea5e9","#f59e0b","#ef4444","#8b5cf6"] for recharts SVG fills. Fixed status/source/stage/outcome literal-tuple constants for selects.
+   146→   146→- Sections implemented:
+   147→   147→  1. Overview — fetches /api/overview (marketing branch returns kpis: [calls 7d, meetings 7d, open leads, pipeline value], deals count, wonThisMonth) via useFetch; in parallel runs a useEffect that best-effort fetches /api/analytics (for marketingFunnel.byStatus) and /api/settings (for monthly_revenue_target). SectionHeader `Welcome, ${firstName}`. 4 KpiCards (pipeline value rendered with formatCurrency). Two-card row: FunnelCard (recharts BarChart layout="vertical" with per-bar Cell coloring + legend + max-in-stage footnote) and RevenueCard (Won this month big number emerald + Pipeline number + Progress bar toward monthly target — if target missing/0 and wonThisMonth>0 shows 100%, else 0%). Quick Actions card with two buttons (Log Today's Activity → setSection("report"); Add Lead → setSection("leads")).
+   148→   148→  2. Daily Report — Card form: date input (default today, max today), notes textarea, dynamic Calls list (each row: Contact Name input, Phone input, Outcome Select [connected/voicemail/no_answer/callback_scheduled], Notes input, remove button) and dynamic Meetings list (each row: Counterparty input, Purpose input, Outcome input, Duration minutes number default 30, remove button). Add Call / Add Meeting buttons. Submit validates at least one non-empty call OR meeting, POSTs /api/marketing-reports {reportDate, notes, calls, meetings}. 409 → toast error with server message. Success → toast + reset to defaults + onSubmitted → setSection("overview"). Submitting state disables the button.
+   149→   149→  3. Leads — fetches /api/leads. SectionHeader with Add Lead Button (opens Dialog). Kanban: 5 columns (new/contacted/qualified/lost/converted) in horizontal scroll (flex gap-4 overflow-x-auto pb-4), each column w-72 shrink-0 with header (StatusBadge + count) and vertical list of LeadCards. LeadCard: name, mono phone, source Badge (capitalize), estimatedValue (formatCurrency, ?? 0 for null), owner, openDeals/openFollowups mono badges, bottom Select to change status (PATCH /api/leads/[id] {status, createDeal: status==="converted"} → toast + refetch). EmptyState per column (dashed muted card). AddLeadDialog: name, contactPhone, contactEmail, source Select, status Select (default new), estimatedValue number → POST /api/leads → toast + reset + close + refetch.
+   150→   150→  4. Deals — fetches /api/deals {stages, pipelineTotal, wonTotal}. Top 3 stat cards: Pipeline Total, Won Total (emerald), Lost (sum of lost stage, rose). Pipeline board: 5 columns (prospecting/proposal/negotiation/won/lost) horizontal scroll, each w-72 shrink-0 with header (StatusBadge + count + total formatCurrency) and DealCards. DealCard takes the column `stage` as a prop (the API doesn't return stage per item) — title, leadName, revenue (formatCurrency, emerald), owner, closedAt date, Select to change stage (PATCH /api/deals/[id] {stage} → toast + refetch). EmptyState per column.
+   151→   151→  5. Follow-ups — fetches /api/followups {items:[{id,leadId,leadName,leadStatus,owner,task,dueDate,done}]}. Sorts not-done first (by dueDate asc) then done. Groups into Overdue / Today / Upcoming / Completed (only non-empty groups rendered). Each item is a Card with a Checkbox (toggles done → PATCH /api/followups/[id] {done} → toast + refetch), task text (strikethrough + muted when done), lead name Badge, leadStatus StatusBadge, owner, due date with CalendarDays icon (red text when overdue && !done). EmptyState when no items at all.
+   152→   152→- Design: emerald accent throughout (KpiCard delta + primary-tinted chart bars + revenue numbers + SectionHeader). Kanban/deal columns w-72 shrink-0, cards rounded-lg border bg-card p-3. Stat cards rounded-xl via shadcn Card. Tables/grids gap-4 / gap-6, responsive collapse to 1 col. Skeletons while loading, EmptyState for empty, toasts (sonner) for every mutation. Codes/IDs in font-mono text-xs.
+   153→   153→- TypeScript strict, no `any` — defined explicit types for every API response shape inline (Kpi, OverviewResponse, AnalyticsFunnel/AnalyticsResponse, LeadItem/LeadsResponse, DealItem/DealStage/DealsResponse, FollowupItem/FollowupsResponse, SettingItem/SettingsResponse, CallDraft/MeetingDraft).
+   154→   154→- Fixed three tsc errors during verification: (1) `toDateInputValue(new Date())` — widened the param type from `string | null | undefined` to `string | Date | null | undefined` and branch on `instanceof Date`; (2) recharts YAxis `tickFormatter={(v: string) => …}` — recharts' overload doesn't accept a narrowly-typed callback, changed to `(v: unknown) => String(v)…`; (3) `deal.stage` doesn't exist on DealItem (the deals API doesn't return stage per item — it's the column key) — added a `stage` prop to DealCard and pass the column stage down from the DealsSection map.
+   155→   155→- Verification: `npx tsc --noEmit 2>&1 | grep MarketingDashboard` → no matches (clean). `npx eslint src/components/hrms/MarketingDashboard.tsx` → exit 0, no errors/warnings. Pre-existing errors elsewhere (examples/websocket, skills/*, src/app/api/leave/route.ts) remain unchanged and unrelated.
+   156→   156→
+   157→   157→Stage Summary:
+   158→   158→- File created: src/components/hrms/MarketingDashboard.tsx (~1100 lines, single "use client" component with 5 inline section sub-components + helpers + AddLeadDialog + FunnelCard/RevenueCard/LeadCard/DealCard).
+   159→   159→- Sections: Overview (KPIs + funnel + revenue progress + quick actions), Daily Report (dynamic calls/meetings form with validation), Leads (5-col kanban + status PATCH + Add Lead Dialog), Deals (3 stat cards + 5-col pipeline board + stage PATCH), Follow-ups (grouped Overdue/Today/Upcoming/Completed + checkbox toggle PATCH).
+   160→   160→- All API URLs and response shapes verified against actual route.ts implementations.
+   161→   161→- No tsc/eslint errors in the new file. Did not modify any other file. Did not create page.tsx.
+   162→   162→
+   163→   163→---
+   164→   164→Task ID: 8-compose-verify
+   165→   165→Agent: general-purpose
+   166→   166→Task: Compose page.tsx, fix leave route bug, lint, start dev server, browser-verify
+   167→   167→
+   168→   168→Work Log:
+   169→   169→- Read worklog (prior 7 tasks all complete: schema, API routes, types, AppShell/TopBar/Sidebar/shared, HrDashboard/TeacherDashboard/MarketingDashboard all default exports), current page.tsx (placeholder logo scaffold), src/lib/types.ts (SessionUser/Candidate/Kpi), src/app/api/session/route.ts (GET bootstraps to IMP-HR-001 Priya Sharma hr_admin when no cookie; returns {user, candidates}; POST switches by employeeId), src/app/api/leave/route.ts, and the dev.log tail (Next 16.1.3 had previously been running with 647 GET / 200 lines).
+   170→   170→- Verified dashboard export signatures by grep: `export default function HrDashboard({ user, candidates }: { user: SessionUser; candidates: Candidate[] })` at HrDashboard.tsx:2238, same shape at TeacherDashboard.tsx:1254 and MarketingDashboard.tsx:1565. So all three are default exports — page.tsx uses default imports (not named).
+   171→   171→- Wrote src/app/page.tsx ("use client"). Single Page component: useEffect fetches GET /api/session once on mount; sets state `{user, candidates} | null` or error flag. Renders in order: error → "Failed to load. Please refresh." centered; loading → LoadingScreen (Card with pulsing brand "Implex Edu" gradient logo + spinner + "Loading HRMS…", min-h-screen flex items-center justify-center); user null → "No session. Please sign in to continue."; user present → role priority routing: `user.roles.includes("hr_admin")` → <HrDashboard/>, else `teacher` → <TeacherDashboard/>, else `marketing` → <MarketingDashboard/>, else "No dashboard for your role." with roles list. All three dashboards imported as default exports from @/components/hrms/{HrDashboard,TeacherDashboard,MarketingDashboard}; Card from @/components/ui/card; types from @/lib/types. Added a small inline Spinner SVG (no extra dep) and avoided any unused imports.
+   172→   172→- Fixed the leave route bug at src/app/api/leave/route.ts:71. Original (tsc error TS2353): `db.employee.findMany({ where: { userRoles: { some: ... } } })` — `userRoles` is a relation on `User`, not `Employee` (per prisma/schema.prisma: Employee→user→User→userRoles). Changed to `where: { user: { userRoles: { some: { role: { rolePermissions: { some: { permission: { name: "leave:approve" } } } } } } } }`. Verified `npx tsc --noEmit 2>&1 | grep "leave/route"` returns nothing.
+   173→   173→- Typecheck + lint: `npx tsc --noEmit` — only remaining errors are in examples/websocket (missing socket.io-client) and skills/stock-analysis-skill (unrelated to src/); src/ is 100% clean. `bun run lint` — 0 errors, 1 warning in prisma/seed.ts (unused eslint-disable, outside src/). src/ lint clean.
+   174→   174→- Dev server startup: the persistent bash shell reaps background jobs between tool calls, so `nohup bun run dev > dev.log &` and even `setsid bash -c '...' &` died when the tool call returned. Solved with a Python double-fork daemonize that reparents to PID 1: forks, setsid, forks again, chdir to project, redirects stdio to /home/z/my-project/dev.log, then execv ./node_modules/.bin/next dev -p 3000. After this, `ps -ef` shows the next-server with PPID 1 (truly detached) and `curl http://localhost:3000/` returns HTTP 200 (24526 bytes). dev.log shows `✓ Ready in 732ms`.
+   175→   175→- Browser verification (agent-browser CLI): set viewport 1440×900, opened http://localhost:3000/. Snapshots confirmed:
+   176→   176→  1. HR overview renders: top bar (Search, Toggle theme, Notifications, Switch role avatar), sidebar with exactly 8 nav items (Overview, Employees, Attendance, Leave, Reports, Analytics, Audit Log, Settings), main heading "Overview", KPI cards + Add Employee/Review Leave/View Reports buttons. Screenshot 01-hr-overview.png.
+   177→   177→  2. Employees nav → heading "Employees", search box, dept/status comboboxes, table with rows. Screenshot 02-hr-employees.png.
+   178→   178→  3. Attendance nav → heading "Attendance", "Last 14 days across the org", status combobox, table. Screenshot 03-hr-attendance.png.
+   179→   179→  4. Leave nav → heading "Leave Requests", "Pending 4" tab selected, 4 cards each with Approve/Reject buttons (Neha Joshi unpaid, Kabir Menon earned, Vikram Rao casual, …). Screenshot 04-hr-leave.png.
+   180→   180→  5. Analytics nav → heading "Analytics", Attendance Trend + Reports Trend recharts SVG charts rendered. Screenshot 05-hr-analytics.png.
+   181→   181→  6. Mutation: clicked Approve on Neha Joshi's request → PATCH /api/leave/[id] returned 200 in dev.log, audit_logs INSERT + notifications INSERT fired, the "Pending 4" tab badge auto-decremented to "Pending 3" and Neha Joshi's card was removed from the list. Screenshot 06-hr-leave-approve-toast.png. Toast was emitted by sonner (mutation handlers in HrDashboard toast success). End-to-end mutation works.
+   182→   182→  7. Role switcher: clicked avatar "Switch role" → dropdown menu of 7 candidates (Priya Sharma HR, Kabir Menon Marketing, Sara Khan Marketing, Neha Joshi Marketing, Arun Iyer Academics, Meera Nair Academics, Vikram Rao Academics). Clicked Arun Iyer → POST /api/session {employeeId:…} → reload → Teacher dashboard renders with exactly 5 nav items (Overview, Daily Report, History, Attendance, Leave) and heading "Welcome, Arun". Screenshot 07-teacher-dashboard.png.
+   183→   183→  8. Switched to Kabir Menon → Marketing dashboard renders with exactly 5 nav items (Overview, Daily Report, Leads, Deals, Follow-ups) and heading "Welcome, Kabir". Screenshot 08-marketing-dashboard.png.
+   184→   184→  9. Leads nav → 5-column kanban (New/Contacted/Qualified/Lost/Converted) with "Contacted 2" column showing 2 lead cards (₹2,20,000 Referral). Screenshot 09-marketing-leads.png.
+   185→   185→  10. Deals nav → pipeline board with Pipeline Total ₹9,90,000, Won Total ₹0, 5 stage columns. Screenshot 10-marketing-deals.png.
+   186→   186→  11. Switched back to Priya Sharma (HR) → 8 nav items restored, "Overview" heading. Screenshot 11-back-to-hr.png.
+   187→   187→- Checked `agent-browser errors` (empty) and `agent-browser console` (only React DevTools info + Fast Refresh logs, no warnings/errors). Checked dev.log grep for `error|unhandled|500|cannot|undefined` (excluding prisma:query SQL lines and eslint-disable notices) → empty. All HTTP responses during the run were 200 (GET /api/session, GET /api/leave, PATCH /api/leave/[id], GET /api/notifications, GET /api/overview, GET /api/leads, GET /api/deals, etc.).
+   188→   188→
+   189→   189→Stage Summary:
+   190→   190→- src/app/page.tsx written ("use client", fetch /api/session, role-priority routing hr_admin→teacher→marketing, branded loading Card, graceful error/no-session/no-dashboard fallbacks). Default imports for the 3 dashboards (verified against actual export lines).
+   191→   191→- src/app/api/leave/route.ts bug fixed: `userRoles` (Employee has no such relation) → `user: { userRoles: … }` (Employee→User→UserRole). `tsc --noEmit` leave/route line clean.
+   192→   192→- src/ is 100% clean for both `npx tsc --noEmit` and `bun run lint` (only remaining tsc errors are in examples/ and skills/ which are explicitly out-of-scope; only remaining lint warning is in prisma/seed.ts).
+   193→   193→- Dev server running detached (PPID 1) on http://localhost:3000 — `✓ Ready in 732ms`, `GET / 200`. Will keep running.
+   194→   194→- Browser-verified end-to-end: HR dashboard (8 nav items + 4 sections + 1 successful Approve mutation), Teacher dashboard (5 nav items), Marketing dashboard (5 nav items + Leads kanban + Deals board), role switcher round-trip. 11 screenshots saved to /home/z/my-project/screenshots/.
+   195→   195→- No remaining issues. App is functional and ready for handoff.
+   196→   196→
+   197→   197→---
+   198→   198→Task ID: W1-B
+   199→   199→Agent: general-purpose
+   200→   200→Task: Build file upload infrastructure (API route + FileUpload/AvatarUpload components)
+   201→   201→
+   202→   202→Work Log:
+   203→   203→- Read worklog.md, prisma/schema.prisma (confirmed Profile.avatarUrl / LeaveRequest.attachmentPath / TeacherClass.notesUrl are pre-existing String? columns — no schema change), session.ts (getSession/hasPermission), db.ts, ui/button.tsx, ui/input.tsx, ui/label.tsx, ui/avatar.tsx, and an existing API route (audit/route.ts + leave/route.ts + session/route.ts) to mirror conventions.
+   204→   204→- Verified sonner Toaster is mounted in app/layout.tsx and `import { toast } from "sonner"` is the established pattern; lucide-react 0.525 available; primary color token is emerald-tinted (oklch 0.55 0.15 160) so `text-primary` IS the emerald accent.
+   205→   205→- Created `src/app/api/upload/route.ts` (POST handler):
+   206→   206→  * Uses `await req.formData()` (Next.js 16 Route Handler convention) with `next/server` NextRequest/NextResponse.
+   207→   207→  * Requires `getSession()` — returns 401 if missing.
+   208→   208→  * Accepts `file` (File) + optional `category` ("avatar" | "leave" | "report" | "document"; defaults to "document").
+   209→   209→  * MIME allow-list per category: avatar → jpeg/png/webp/gif; leave & document → pdf/jpeg/png/webp; report → text/plain + application/pdf.
+   210→   210→  * 5 MB hard cap; rejects empty files (400) and oversized (413) and disallowed MIME (415).
+   211→   211→  * Saves to `public/uploads/<category>/<crypto.randomUUID()>.<ext>` — extension derived from MIME map first, then sanitized original-name ext, then `bin` fallback. Uses `fs/promises.mkdir({ recursive: true })` + `writeFile`.
+   212→   212→  * Returns `{ path: "/uploads/<category>/<filename>", filename, size, mimeType }` with status 201.
+   213→   213→  * Added a clear code comment block noting the production target is Supabase Storage + signed URLs (spec §14), and that this demo intentionally uses local disk under /public for direct static serving — signed URLs NOT implemented.
+   214→   214→- Created 4 empty `.gitkeep` files so the category dirs are tracked by git:
+   215→   215→  `public/uploads/avatar/.gitkeep`, `public/uploads/leave/.gitkeep`, `public/uploads/report/.gitkeep`, `public/uploads/document/.gitkeep`.
+   216→   216→- Created `src/components/hrms/file-upload.tsx` ("use client") exporting two components:
+   217→   217→  * `FileUpload({ category, accept, label, onUploaded, onError, buttonText })` — ghost+sm Button with Upload icon, hidden `<input type="file">` triggered by `inputRef.current?.click()`. POSTs FormData (`file` + `category`) to `/api/upload`. Shows `Loader2` spinner + "Uploading…" while in flight (text-primary emerald). On success → `toast.success` + `onUploaded(path)`; on error → `toast.error` + `onError(msg)`. Resets input value afterward so the same file can be re-selected.
+   218→   218→  * `AvatarUpload({ currentUrl, displayName, onUploaded })` — circular `size-20` shadcn Avatar (AvatarImage + AvatarFallback initials, ring-2 ring-primary/20). "Change photo" Button (ghost+sm) with Camera icon opens file picker `accept="image/png,image/jpeg,image/webp"`. Optimistic local preview after upload; overlay spinner on the avatar while uploading. toast success/error.
+   219→   219→  * Shared internal `uploadFile(file, category)` helper to DRY the fetch logic. No `any` types — explicit `React.JSX.Element` return types, typed response shape.
+   220→   220→- Ran `npx tsc --noEmit 2>&1 | grep -E "upload|file-upload|FileUpload|AvatarUpload"` → CLEAN (no errors in new files; unrelated errors exist in examples/ and skills/ trees only).
+   221→   221→- Curl-verified the route end-to-end against the running dev server on :3000 (after bootstrapping a session via GET /api/session, which auto-sets the implex_session_emp cookie for HR admin emp-priya):
+   222→   222→  * avatar PNG → 201 `{"path":"/uploads/avatar/<uuid>.png","filename":"<uuid>.png","size":69,"mimeType":"image/png"}`
+   223→   223→  * no file → 400 `{"error":"missing file"}`
+   224→   224→  * image/png into report category → 415 `{"error":"mimeType \"image/png\" not allowed for category \"report\""}`
+   225→   225→  * text/plain into report → 201 `{"path":"/uploads/report/<uuid>.txt",...,"mimeType":"text/plain"}`
+   226→   226→  * no category field → defaults to document → 201 `{"path":"/uploads/document/<uuid>.png",...}`
+   227→   227→  * 6 MB file → 413 `{"error":"file too large (max 5242880 bytes)"}`
+   228→   228→  * saved file fetched via GET /uploads/avatar/<uuid>.png → 200, 69 bytes, content-type image/png, bytes identical to source (cmp ok)
+   229→   229→  * cleaned up test artifacts afterwards (only .gitkeep files remain in each category dir).
+   230→   230→
+   231→   231→Stage Summary:
+   232→   232→- Created: src/app/api/upload/route.ts
+   233→   233→- Created: src/components/hrms/file-upload.tsx (FileUpload + AvatarUpload named exports, plus default = FileUpload)
+   234→   234→- Created: public/uploads/avatar/.gitkeep, public/uploads/leave/.gitkeep, public/uploads/report/.gitkeep, public/uploads/document/.gitkeep
+   235→   235→- No schema changes; no dashboard wiring; no tests (per constraints).
+   236→   236→- Next: separate task will wire AvatarUpload into profile editing, FileUpload into LeaveRequest attachment + TeacherClass notes upload forms.
+   237→   237→
+   238→   238→---
+   239→   239→Task ID: W1-C
+   240→   240→Agent: general-purpose
+   241→   241→Task: Build broadcast composer (API route + BroadcastComposer component)
+   242→   242→
+   243→   243→Work Log:
+   244→   244→- Read worklog.md, prisma/schema.prisma (Notification + Employee + UserRole + AuditLog models), src/lib/auth/session.ts (getSession, hasPermission), src/lib/db.ts, src/components/hrms/shared.tsx (SectionHeader), and existing routes (audit, employees, leave, notifications, roles, departments) to learn patterns + the `notification:broadcast` permission catalog.
+   245→   245→- Confirmed `notification:broadcast` is seeded for hr_admin only (prisma/seed.ts:50,68) and that the demo HR session (Priya Sharma, IMP-HR-001) holds it.
+   246→   246→- Created POST /api/notifications/broadcast:
+   247→   247→  - 401 without session, 403 without `notification:broadcast` permission.
+   248→   248→  - Validates title/body non-empty + target.type in {all, role, department}; requires roleId for role, departmentId for department (400 otherwise).
+   249→   249→  - Resolves recipients via db.employee.findMany with `employmentStatus: "active", deletedAt: null` applied to all three target types (role filter via `user.userRoles.some.roleId`, department via `departmentId`).
+   250→   250→  - Uses `db.notification.createMany` (type "announcement", payload = JSON of {target}) for efficiency. Zero recipients → returns `{ created: 0 }` (HTTP 200, not an error).
+   251→   251→  - Writes an audit log (action "notification.broadcast", targetTable "notifications", targetId = `broadcast-<ts>`, afterState = JSON {title, target, recipientCount}) for every broadcast, including zero-recipient attempts.
+   252→   252→  - POST-only — composer fetches roles from /api/roles and departments from /api/departments directly.
+   253→   253→- Created BroadcastComposer.tsx ("use client"):
+   254→   254→  - Card titled "Broadcast Announcement" via SectionHeader; Megaphone icon badge in emerald accent.
+   255→   255→  - Fields: Title (Input), Message (Textarea, 4 rows), Audience (Select: Everyone / By role / By department). Selecting "By role" reveals a roles Select (lazy fetch /api/roles); "By department" reveals a departments Select (lazy fetch /api/departments).
+   256→   256→  - Live "Recipients:" hint shows the resolved audience label (org-wide, role label, or department name).
+   257→   257→  - Submit button "Send broadcast" with Send/Loader2 spinner; disabled while sending or when title/message empty or audience selection incomplete.
+   258→   258→  - On success: toast `Announcement sent to N recipients`, reset form, call onSent?.(). On error: toast error.
+   259→   259→  - Plain React state (no react-hook-form), strict TypeScript, no `any`. Note under the title: "Recipients receive an in-app notification instantly."
+   260→   260→- Ran `npx tsc --noEmit 2>&1 | grep -E "broadcast|BroadcastComposer"` → CLEAN (no errors). Note: return type uses `React.JSX.Element` (React 19 types dropped the global `JSX` namespace).
+   261→   261→- Curl-tested against running dev server (HR session via /api/session cookie):
+   262→   262→  - target=all → `{"created":7}`
+   263→   263→  - target=role (role-teacher) → `{"created":3}`
+   264→   264→  - target=department (dept-hr) → `{"created":1}`
+   265→   265→  - validation: empty title → HTTP 400 `{"error":"title is required"}`; role target without roleId → HTTP 400 `{"error":"roleId required for role target"}`
+   266→   266→  - zero-recipient (nonexistent roleId) → HTTP 200 `{"created":0}`
+   267→   267→  - audit log: 4 `notification.broadcast` rows with correct recipientCount per target.
+   268→   268→
+   269→   269→Stage Summary:
+   270→   270→- Files created:
+   271→   271→  - src/app/api/notifications/broadcast/route.ts (POST only)
+   272→   272→  - src/components/hrms/BroadcastComposer.tsx (default export, props: { onSent?: () => void })
+   273→   273→- No dashboards or other components modified. No tests written.
+   274→   274→- Ready for wiring into the HR dashboard in a separate task.
+   275→   275→
+   276→   276→---
+   277→   277→Task ID: W1-A
+   278→   278→Agent: general-purpose
+   279→   279→Task: Fix 401 flash + indigo colors; build ⌘K command palette
+   280→   280→
+   281→   281→Work Log:
+   282→   282→- Read worklog.md (recent W1-B/C entries for conventions), src/app/page.tsx, src/components/hrms/TopBar.tsx, src/components/hrms/AppShell.tsx, src/components/ui/command.tsx, src/components/ui/dialog.tsx, src/lib/auth/session.ts, src/app/api/session/route.ts, src/components/hrms/ThemeToggle.tsx, src/app/layout.tsx (ThemeProvider via next-themes → useTheme available client-side).
+   283→   283→- Investigated cold-start 401 race via dev.log tail: confirmed REAL race (not stale-log artifact). Pattern repeats on every cold load:
+   284→   284→    GET /api/session 200 in 12ms        (Set-Cookie: implex_session_emp=…)
+   285→   285→    GET /api/notifications 401 in 8ms   ← dashboard mount fired before cookie jar committed
+   286→   286→    GET /api/overview 401 in 7ms
+   287→   287→    GET /api/notifications 401 ×N       ← NotificationCenter polling keeps hitting 401 until manual refresh
+   288→   288→  Root cause: page.tsx awaits /api/session (which 200s + sets cookie), then setData → dashboard mounts → its useEffects fire /api/overview + /api/notifications immediately. In dev/HMR the browser sometimes dispatches those requests before the Set-Cookie is fully applied to the cookie jar → 401 flash, dashboard stuck on empty/error state.
+   289→   289→- Per task constraints (do NOT refactor dashboards), the robust fix is the new apiFetch helper, available for any future fetch site to opt into. page.tsx itself is left structurally unchanged except for the indigo→emerald color fix (the session-fetch flow there is already correct: setData triggers the re-render where the dashboard mounts with the now-set cookie — the residual race is exactly what apiFetch would heal once adopted).
+   290→   290→
+   291→   291→- JOB 1 — created src/lib/api.ts:
+   292→   292→  - `apiFetch<T>(input, init?)`: same-origin fetch; on 401 AND `!sessionEnsured`, transparently bootstraps the session via `GET /api/session` then retries the original request exactly once. Throws `ApiError` (status + body snippet) on any non-2xx. The module-scoped `sessionEnsured` flag guarantees no retry loop — a second 401 after bootstrap is a real auth failure.
+   293→   293→  - `ApiError` class (status, body, message). `__resetSessionEnsuredForTests` test-only escape hatch.
+   294→   294→  - `"use client"` directive; no `any`; uses `credentials: "same-origin"` so the cookie jar is consulted on every retry.
+   295→   295→
+   296→   296→- JOB 1 — fixed indigo violation in src/app/page.tsx LoadingScreen + Spinner:
+   297→   297→  - gradient: `from-indigo-500 to-violet-600` → `from-emerald-500 to-teal-600`
+   298→   298→  - "Edu" accent: `text-indigo-600` → `text-emerald-600`
+   299→   299→  - spinner stroke: `text-indigo-500` → `text-emerald-500`
+   300→   300→  - Structure unchanged; no other edits to page.tsx.
+
+[showing lines 1-300 of 331; use offset=301 with limit to continue reading]

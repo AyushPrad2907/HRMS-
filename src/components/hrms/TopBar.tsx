@@ -1,32 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { Menu, Search, CornerDownLeft } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import { ThemeToggle } from "@/components/hrms/ThemeToggle";
 import { NotificationCenter } from "@/components/hrms/NotificationCenter";
 import { RoleSwitcher } from "@/components/hrms/RoleSwitcher";
+import CommandPalette from "@/components/hrms/CommandPalette";
 import type { SessionUser, Candidate } from "@/lib/types";
+
+type NavItem = { id: string; label: string };
 
 /**
  * TopBar — sticky app header. Left: mobile menu trigger (dispatches a custom
  * `implex-open-sidebar` event the dashboard listens for) + brand. Center:
- * search trigger that opens a Command palette for quick nav. Right: theme
- * toggle, notifications, separator, role switcher.
+ * search trigger that opens the ⌘K CommandPalette for quick nav + actions.
+ * Right: theme toggle, notifications, separator, role switcher.
+ *
+ * The palette is also opened globally via ⌘K (mac) / Ctrl+K (win/linux) — the
+ * listener is registered in a useEffect to avoid hydration mismatch.
  */
 export default function TopBar({
   user,
@@ -36,21 +29,33 @@ export default function TopBar({
 }: {
   user: SessionUser;
   candidates: Candidate[];
-  navItems?: { id: string; label: string }[];
+  navItems?: NavItem[];
   onNavigate?: (id: string) => void;
 }) {
-  const [searchOpen, setSearchOpen] = React.useState(false);
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
 
   const handleMenu = React.useCallback(() => {
     window.dispatchEvent(new Event("implex-open-sidebar"));
   }, []);
 
-  const handlePick = React.useCallback(
+  // Global ⌘K / Ctrl+K → open the command palette. Registered in an effect so
+  // it only attaches on the client (no hydration mismatch).
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const handleNavigate = React.useCallback(
     (id: string) => {
-      setSearchOpen(false);
       onNavigate?.(id);
     },
-    [onNavigate]
+    [onNavigate],
   );
 
   return (
@@ -79,52 +84,24 @@ export default function TopBar({
           </span>
         </div>
 
-        {/* Center — search */}
-        <div className="mx-auto w-full max-w-md">
-          <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="group flex h-9 w-full items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                aria-label="Search"
-              >
-                <Search className="size-4" />
-                <span className="truncate">
-                  Search{navItems && navItems.length > 0 ? " sections…" : "…"}
-                </span>
-                <kbd className="ml-auto hidden rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
-                  /
-                </kbd>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              className="w-[min(90vw,32rem)] p-0"
-              align="center"
-            >
-              <Command>
-                <CommandInput placeholder="Jump to…" />
-                <CommandList>
-                  <CommandEmpty>No matching sections.</CommandEmpty>
-                  {navItems && navItems.length > 0 ? (
-                    <CommandGroup heading="Navigate">
-                      {navItems.map((item) => (
-                        <CommandItem
-                          key={item.id}
-                          value={`${item.label} ${item.id}`}
-                          onSelect={() => handlePick(item.id)}
-                          className="gap-2"
-                        >
-                          <Search className="size-3.5 text-muted-foreground" />
-                          <span className="flex-1">{item.label}</span>
-                          <CornerDownLeft className="size-3 text-muted-foreground opacity-60" />
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  ) : null}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+        {/* Center — search trigger (opens ⌘K command palette). On mobile it
+            flexes to fill remaining space (capped at max-w-md) so the right-
+            hand actions never get pushed off-screen. */}
+        <div className="mx-auto w-full max-w-md min-w-0 flex-1 sm:flex-none">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="group flex h-9 w-full items-center gap-2 rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label="Open command palette"
+          >
+            <Search className="size-4" />
+            <span className="truncate">
+              Search{navItems && navItems.length > 0 ? " sections…" : "…"}
+            </span>
+            <kbd className="ml-auto hidden rounded border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
+              /
+            </kbd>
+          </button>
         </div>
 
         {/* Right — actions */}
@@ -135,6 +112,13 @@ export default function TopBar({
           <RoleSwitcher user={user} candidates={candidates} />
         </div>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        navItems={navItems ?? []}
+        onNavigate={handleNavigate}
+      />
     </header>
   );
 }

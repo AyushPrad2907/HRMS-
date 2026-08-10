@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronsUpDown, Check } from "lucide-react";
+import { ChevronsUpDown, Check, User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { SessionUser, Candidate } from "@/lib/types";
+import ProfileSheet from "@/components/hrms/ProfileSheet";
 
 /**
  * RoleSwitcher — dropdown from the TopBar avatar that lets the demo user
@@ -30,6 +31,7 @@ export function RoleSwitcher({
   candidates: Candidate[];
 }) {
   const [switching, setSwitching] = React.useState(false);
+  const [profileOpen, setProfileOpen] = React.useState(false);
 
   const grouped = React.useMemo(() => {
     const map = new Map<string, Candidate[]>();
@@ -111,6 +113,14 @@ export function RoleSwitcher({
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={() => setProfileOpen(true)}
+          className="gap-2 py-2"
+        >
+          <User className="size-4 text-primary" />
+          <span className="flex-1 text-sm">View profile</span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <ScrollArea className="max-h-80">
           <div className="pr-1">
             {grouped.map(([role, list]) => (
@@ -161,6 +171,7 @@ export function RoleSwitcher({
           </div>
         </ScrollArea>
       </DropdownMenuContent>
+      <ProfileSheet open={profileOpen} onOpenChange={setProfileOpen} />
     </DropdownMenu>
   );
 }

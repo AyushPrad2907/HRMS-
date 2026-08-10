@@ -13,6 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/components/hrms/shared";
+import { apiFetch } from "@/lib/api";
 
 type NotificationItem = {
   id: string;
@@ -42,13 +43,14 @@ export function NotificationCenter() {
 
   const fetchFeed = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/notifications", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as FeedResponse;
+      // apiFetch transparently bootstraps the session cookie on 401 and
+      // retries once — fixes the cold-start 401 flash where NotificationCenter
+      // would silently stay empty until a manual page refresh.
+      const data = await apiFetch<FeedResponse>("/api/notifications");
       setItems(data.items ?? []);
       setUnread(data.unread ?? 0);
     } catch {
-      // silent — UI will just show empty state
+      // silent — UI will just show empty state (or the previous good state)
     } finally {
       setLoading(false);
     }
@@ -65,13 +67,13 @@ export function NotificationCenter() {
   async function handleMarkAll() {
     setMarking(true);
     try {
-      const res = await fetch("/api/notifications", { method: "PATCH" });
-      if (res.ok) {
-        setItems((prev) =>
-          prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() }))
-        );
-        setUnread(0);
-      }
+      await apiFetch<{ ok: boolean }>("/api/notifications", { method: "PATCH" });
+      setItems((prev) =>
+        prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString() }))
+      );
+      setUnread(0);
+    } catch {
+      // silent — the next 30s poll will resync
     } finally {
       setMarking(false);
     }
