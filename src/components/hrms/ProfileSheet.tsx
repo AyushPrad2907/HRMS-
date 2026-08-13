@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Save } from "lucide-react";
+import { Loader2, Save, KeyRound, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -60,6 +60,14 @@ export default function ProfileSheet({
   const [displayName, setDisplayName] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [bio, setBio] = React.useState("");
+
+  // Password change state.
+  const [pwCurrent, setPwCurrent] = React.useState("");
+  const [pwNew, setPwNew] = React.useState("");
+  const [pwConfirm, setPwConfirm] = React.useState("");
+  const [showCurrent, setShowCurrent] = React.useState(false);
+  const [showNew, setShowNew] = React.useState(false);
+  const [changingPw, setChangingPw] = React.useState(false);
 
   // Optimistic avatar state — updated immediately on upload, then persisted
   // via PATCH. Falls back to the fetched value on (re)open.
@@ -157,6 +165,42 @@ export default function ProfileSheet({
       toast.error("Could not save profile", { description: msg });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleChangePassword() {
+    if (pwNew.length < 8) {
+      toast.error("New password must be at least 8 characters");
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      toast.error("Passwords don't match");
+      return;
+    }
+    setChangingPw(true);
+    try {
+      await apiFetch<ProfileResponse>("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: pwCurrent,
+          newPassword: pwNew,
+        }),
+      });
+      toast.success("Password changed");
+      setPwCurrent("");
+      setPwNew("");
+      setPwConfirm("");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof ApiError
+          ? `Failed (${err.status})`
+          : err instanceof Error
+            ? err.message
+            : "Failed";
+      toast.error("Could not change password", { description: msg });
+    } finally {
+      setChangingPw(false);
     }
   }
 
@@ -317,6 +361,112 @@ export default function ProfileSheet({
                   <>
                     <Save className="size-4" />
                     Save changes
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <Separator />
+
+            {/* Change password */}
+            <div className="flex flex-col gap-4 p-6">
+              <div className="flex items-center gap-2">
+                <KeyRound className="size-4 text-muted-foreground" />
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Change password
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="profile-pw-current">Current password</Label>
+                <div className="relative">
+                  <Input
+                    id="profile-pw-current"
+                    type={showCurrent ? "text" : "password"}
+                    value={pwCurrent}
+                    onChange={(e) => setPwCurrent(e.target.value)}
+                    placeholder="Your current password"
+                    disabled={changingPw}
+                    autoComplete="current-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrent((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
+                    aria-label={showCurrent ? "Hide password" : "Show password"}
+                  >
+                    {showCurrent ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="profile-pw-new">New password</Label>
+                <div className="relative">
+                  <Input
+                    id="profile-pw-new"
+                    type={showNew ? "text" : "password"}
+                    value={pwNew}
+                    onChange={(e) => setPwNew(e.target.value)}
+                    placeholder="Min. 8 characters"
+                    disabled={changingPw}
+                    autoComplete="new-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNew((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
+                    aria-label={showNew ? "Hide password" : "Show password"}
+                  >
+                    {showNew ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="profile-pw-confirm">Confirm new password</Label>
+                <Input
+                  id="profile-pw-confirm"
+                  type="password"
+                  value={pwConfirm}
+                  onChange={(e) => setPwConfirm(e.target.value)}
+                  placeholder="Repeat new password"
+                  disabled={changingPw}
+                  autoComplete="new-password"
+                />
+                {pwConfirm && pwNew !== pwConfirm ? (
+                  <p className="text-xs text-destructive">Passwords don&apos;t match</p>
+                ) : null}
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={changingPw || !pwCurrent || pwNew.length < 8 || pwNew !== pwConfirm}
+                onClick={() => void handleChangePassword()}
+                className="w-full"
+              >
+                {changingPw ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Updating…
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="size-4" />
+                    Update password
                   </>
                 )}
               </Button>

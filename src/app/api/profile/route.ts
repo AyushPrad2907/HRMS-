@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth/session";
+import { hashPassword, verifyPassword } from "@/lib/auth/password";
 
 /**
  * Shape returned by GET and PATCH /api/profile.
@@ -90,6 +91,7 @@ export async function GET() {
 }
 
 // PATCH /api/profile — update own profile (displayName / phone / bio / avatarUrl only).
+// Optionally also change password by providing { currentPassword, newPassword }.
 // Email, employeeCode, designation, department etc. are HR-managed and not
 // editable here. Writes an audit log of the changed fields.
 export async function PATCH(req: NextRequest) {
@@ -103,10 +105,11 @@ export async function PATCH(req: NextRequest) {
     phone?: unknown;
     bio?: unknown;
     avatarUrl?: unknown;
+    currentPassword?: unknown;
+    newPassword?: unknown;
   };
 
-  // Whitelist + validate only the editable fields. Each must be a string if
-  // present; we trim displayName and treat empty-string avatarUrl as null.
+  // Whitelist + validate only the editable profile fields.
   const update: {
     displayName?: string;
     phone?: string | null;
@@ -167,11 +170,40 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  if (Object.keys(update).length === 0) {
+  // Determine if a password change was requested.
+  const wantsPasswordChange =
+    payload.currentPassword !== undefined || payload.newPassword !== undefined;
+
+  if (Object.keys(update).length === 0 && !wantsPasswordChange) {
     return NextResponse.json(
       { error: "no editable fields provided" },
       { status: 400 },
     );
+  }
+
+  // Validate password change fields before touching the DB.
+  if (wantsPasswordChange) {
+    if (
+      typeof payload.currentPassword !== "string" ||
+      !payload.currentPassword
+    ) {
+      return NextResponse.json(
+        { error: "currentPassword is required to change password" },
+        { status: 400 },
+      );
+    }
+    if (typeof payload.newPassword !== "string") {
+      return NextResponse.json(
+        { error: "newPassword must be a string" },
+        { status: 400 },
+      );
+    }
+    if (payload.newPassword.length < 8) {
+      return NextResponse.json(
+        { error: "newPassword must be at least 8 characters" },
+        { status: 400 },
+      );
+    }
   }
 
   const emp = await db.employee.findUnique({
@@ -182,31 +214,62 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  // Upsert defensively — the seed always creates a Profile, but if one is
-  // missing we still want the PATCH to succeed.
-  const existingProfileId = emp.user.profile?.id ?? "";
-  const updated = await db.profile.upsert({
-    where: { userId: emp.user.id },
-    create: {
-      userId: emp.user.id,
-      displayName: update.displayName ?? emp.user.email,
-      phone: update.phone ?? null,
-      bio: update.bio ?? null,
-      avatarUrl: update.avatarUrl ?? null,
-    },
-    update,
-  });
+  // Password change — verify current password against the stored hash.
+  if (wantsPasswordChange) {
+    const storedHash = emp.user.passwordHash;
+    if (
+      !storedHash ||
+      !verifyPassword(payload.currentPassword as string, storedHash)
+    ) {
+      return NextResponse.json(
+        { error: "Current password is incorrect" },
+        { status: 400 },
+      );
+    }
+    // Hash and persist the new password.
+    const newHash = hashPassword(payload.newPassword as string);
+    await db.user.update({
+      where: { id: emp.user.id },
+      data: { passwordHash: newHash },
+    });
+    await db.auditLog.create({
+      data: {
+        actorId: session.employeeId,
+        action: "profile.password_change",
+        targetTable: "users",
+        targetId: emp.user.id,
+        afterState: JSON.stringify({ passwordChanged: true }),
+        ipAddress: "10.0.0.?",
+      },
+    });
+  }
 
-  await db.auditLog.create({
-    data: {
-      actorId: session.employeeId,
-      action: "profile.update",
-      targetTable: "profiles",
-      targetId: updated.id || existingProfileId,
-      afterState: JSON.stringify(update),
-      ipAddress: "10.0.0.?",
-    },
-  });
+  // Profile-field updates (displayName / phone / bio / avatarUrl).
+  if (Object.keys(update).length > 0) {
+    const existingProfileId = emp.user.profile?.id ?? "";
+    const updated = await db.profile.upsert({
+      where: { userId: emp.user.id },
+      create: {
+        userId: emp.user.id,
+        displayName: update.displayName ?? emp.user.email,
+        phone: update.phone ?? null,
+        bio: update.bio ?? null,
+        avatarUrl: update.avatarUrl ?? null,
+      },
+      update,
+    });
+
+    await db.auditLog.create({
+      data: {
+        actorId: session.employeeId,
+        action: "profile.update",
+        targetTable: "profiles",
+        targetId: updated.id || existingProfileId,
+        afterState: JSON.stringify(update),
+        ipAddress: "10.0.0.?",
+      },
+    });
+  }
 
   // Re-fetch the fully joined employee so the response mirrors GET exactly.
   const refreshed = await db.employee.findUnique({
