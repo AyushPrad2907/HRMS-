@@ -198,6 +198,15 @@ type SettingItem = { key: string; value: unknown };
 
 type SettingsResponse = { items: SettingItem[] };
 
+type LeaveBalances = {
+  casual: number;
+  sick: number;
+  earned: number;
+  unpaid: number;
+};
+
+const EMPTY_BALANCES: LeaveBalances = { casual: 0, sick: 0, earned: 0, unpaid: 0 };
+
 // Daily report — local form state shapes (what we POST).
 type CallDraft = {
   id: string;
@@ -266,6 +275,25 @@ function todayInputValue(): string {
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function parseLeaveBalances(items: SettingItem[] | undefined): LeaveBalances {
+  if (!items) return EMPTY_BALANCES;
+  const row = items.find((s) => s.key === "leave_balances");
+  if (!row) return EMPTY_BALANCES;
+  const v = row.value;
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const obj = v as Partial<Record<keyof LeaveBalances, unknown>>;
+    const num = (x: unknown): number =>
+      typeof x === "number" && isFinite(x) ? x : typeof x === "string" ? Number(x) || 0 : 0;
+    return {
+      casual: num(obj.casual),
+      sick: num(obj.sick),
+      earned: num(obj.earned),
+      unpaid: num(obj.unpaid),
+    };
+  }
+  return EMPTY_BALANCES;
 }
 
 /**
@@ -1593,6 +1621,8 @@ function prettifyLeaveType(t: string): string {
 
 function LeaveSection() {
   const leaveFetch = useFetch<LeaveResponse>("/api/leave");
+  const settingsFetch = useFetch<SettingsResponse>("/api/settings");
+  const balances = parseLeaveBalances(settingsFetch.data?.items);
 
   const [leaveType, setLeaveType] = React.useState<string>("casual");
   const [startDate, setStartDate] = React.useState<string>(todayInputValue());
@@ -1656,13 +1686,15 @@ function LeaveSection() {
     <div className="space-y-6">
       <SectionHeader title="My Leave" description="Request and track leave" />
 
-      <Card className="px-6 py-5">
-        <CardHeader className="px-0 pb-3">
-          <CardTitle className="text-sm font-semibold">Request Leave</CardTitle>
-        </CardHeader>
-        <CardContent className="px-0">
-          <form onSubmit={submit} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <Card className="px-6 py-5">
+            <CardHeader className="px-0 pb-3">
+              <CardTitle className="text-sm font-semibold">Request Leave</CardTitle>
+            </CardHeader>
+            <CardContent className="px-0">
+              <form onSubmit={submit} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="mkt-leave-type">Leave Type</Label>
                 <Select value={leaveType} onValueChange={setLeaveType}>
@@ -1735,9 +1767,50 @@ function LeaveSection() {
                 {submitting ? "Submitting…" : "Submit Request"}
               </Button>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+            </form>
+          </CardContent>
+        </Card>
+        </div>
+
+        {/* Leave balance card */}
+        <Card className="h-fit px-6 py-5">
+          <CardHeader className="px-0 pb-3">
+            <CardTitle className="text-sm font-semibold">Leave Balance</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0">
+            {settingsFetch.loading && !settingsFetch.data ? (
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  { label: "Casual", key: "casual" as const, color: "text-emerald-600 dark:text-emerald-400" },
+                  { label: "Sick", key: "sick" as const, color: "text-sky-600 dark:text-sky-400" },
+                  { label: "Earned", key: "earned" as const, color: "text-amber-600 dark:text-amber-400" },
+                  { label: "Unpaid", key: "unpaid" as const, color: "text-rose-600 dark:text-rose-400" },
+                ] as const).map(({ label, key, color }) => (
+                  <div
+                    key={key}
+                    className="flex flex-col rounded-lg border bg-muted/40 p-3"
+                  >
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {label}
+                    </span>
+                    <span className={`text-2xl font-bold tabular-nums ${color}`}>
+                      {balances[key]}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">days</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="px-0 py-0">
         <CardHeader className="flex-row items-center justify-between px-6 py-4">
