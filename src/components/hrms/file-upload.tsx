@@ -17,18 +17,39 @@ import {
 
 type LeaveReportDocumentCategory = "leave" | "report" | "document";
 
+/** Module-level flag — mirrors the sessionEnsured guard in lib/api.ts. */
+let uploadSessionEnsured = false;
+
 /**
  * Internal helper: POST a single file to /api/upload.
+ * On a 401, bootstraps the session via GET /api/session then retries once,
+ * matching the same cold-start recovery behaviour as apiFetch.
  * Returns the server response JSON or throws on non-2xx / network error.
  */
 async function uploadFile(
   file: File,
   category: LeaveReportDocumentCategory | "avatar",
 ): Promise<{ path: string; filename: string; size: number; mimeType: string }> {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("category", category);
-  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  const doUpload = async (): Promise<Response> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("category", category);
+    return fetch("/api/upload", {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin",
+    });
+  };
+
+  let res = await doUpload();
+
+  // Cold-start 401: bootstrap the session cookie then retry once.
+  if (res.status === 401 && !uploadSessionEnsured) {
+    uploadSessionEnsured = true;
+    await fetch("/api/session", { credentials: "same-origin" });
+    res = await doUpload();
+  }
+
   const data = (await res.json().catch(() => ({}))) as {
     path?: string;
     filename?: string;
