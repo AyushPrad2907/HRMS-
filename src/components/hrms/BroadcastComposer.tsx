@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SectionHeader } from "@/components/hrms/shared";
+import { apiFetch, ApiError } from "@/lib/api";
 
 type TargetType = "all" | "role" | "department";
 
@@ -67,9 +68,8 @@ export default function BroadcastComposer({
     if (audience !== "role" || roles.length > 0) return;
     let cancelled = false;
     setLoadingOptions(true);
-    fetch("/api/roles")
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((data: { roles?: RoleOption[] }) => {
+    apiFetch<{ roles?: RoleOption[] }>("/api/roles")
+      .then((data) => {
         if (!cancelled && data.roles) setRoles(data.roles);
       })
       .catch(() => {
@@ -88,9 +88,8 @@ export default function BroadcastComposer({
     if (audience !== "department" || departments.length > 0) return;
     let cancelled = false;
     setLoadingOptions(true);
-    fetch("/api/departments")
-      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
-      .then((data: { items?: DepartmentOption[] }) => {
+    apiFetch<{ items?: DepartmentOption[] }>("/api/departments")
+      .then((data) => {
         if (!cancelled && data.items) setDepartments(data.items);
       })
       .catch(() => {
@@ -134,28 +133,29 @@ export default function BroadcastComposer({
 
     setSending(true);
     try {
-      const res = await fetch("/api/notifications/broadcast", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          body: message.trim(),
-          target,
-        }),
-      });
-      const data = (await res
-        .json()
-        .catch(() => ({}))) as { created?: number; error?: string };
-      if (!res.ok) {
-        throw new Error(data.error ?? "Failed to send broadcast");
-      }
+      const data = await apiFetch<{ created?: number }>(
+        "/api/notifications/broadcast",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: title.trim(),
+            body: message.trim(),
+            target,
+          }),
+        },
+      );
       toast.success(`Announcement sent to ${data.created ?? 0} recipients`);
       resetForm();
       onSent?.();
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to send broadcast",
-      );
+      const msg =
+        err instanceof ApiError
+          ? `Failed to send broadcast (${err.status})`
+          : err instanceof Error
+            ? err.message
+            : "Failed to send broadcast";
+      toast.error(msg);
     } finally {
       setSending(false);
     }
